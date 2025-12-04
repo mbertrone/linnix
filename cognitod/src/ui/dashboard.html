@@ -455,9 +455,9 @@
                 <h3 class="card-title">Quick Actions</h3>
             </div>
             <div class="quick-actions">
-                <a href="http://localhost:3000/processes" target="_blank" class="btn">View All Processes</a>
-                <a href="http://localhost:3000/metrics" target="_blank" class="btn">Prometheus Metrics</a>
-                <a href="http://localhost:8090/health" target="_blank" class="btn">LLM Health Check</a>
+                <a href="/processes" target="_blank" class="btn">View All Processes</a>
+                <a href="/metrics" target="_blank" class="btn">Prometheus Metrics</a>
+                <a href="#" id="llm-health-link" target="_blank" class="btn">LLM Health Check</a>
                 <a href="https://github.com/linnix-os/linnix" target="_blank" class="btn">GitHub Repository</a>
             </div>
         </div>
@@ -469,9 +469,9 @@
     </div>
 
     <script>
-        // Configuration
+        // Configuration - dynamically construct URLs based on current host
         const COGNITOD_BASE = '';
-        const LLM_BASE = 'http://localhost:8090';
+        const LLM_BASE = `${window.location.protocol}//${window.location.hostname}:8090`;
 
         // State
         let eventCount = 0;
@@ -967,6 +967,9 @@
         // Initialize dashboard
         async function initialize() {
             console.log('Initializing Linnix Dashboard...');
+
+            // Set LLM health link dynamically
+            document.getElementById('llm-health-link').href = `${LLM_BASE}/health`;
 
             // Initial health check
             await checkServiceHealth();

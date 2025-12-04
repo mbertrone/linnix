@@ -72,18 +72,19 @@ services:
   llama-server:
     image: ${LLAMA_IMAGE:-ghcr.io/ggerganov/llama.cpp:server}
     container_name: linnix-llm
-    volumes:
-      - ./models:/models:ro
     ports:
       - "8090:8090"
+    volumes:
+      - ./models:/models:ro
+    environment:
+      - LLAMA_ARG_HOST=0.0.0.0
     command: [
       "--host", "0.0.0.0",
-      "--port", "8090", 
+      "--port", "8090",
       "-m", "/models/linnix-3b-distilled-q5_k_m.gguf",
       "--alias", "linnix-3b-distilled",
       "--ctx-size", "4096",
-      "-t", "4",
-      "--log-disable"
+      "-t", "4"
     ]
     restart: unless-stopped
     healthcheck:
@@ -91,6 +92,10 @@ services:
       interval: 15s
       timeout: 10s
       retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 4G
 
 volumes:
   linnix-data:

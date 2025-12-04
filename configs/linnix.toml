@@ -2,7 +2,7 @@
 # Documentation: https://docs.linnix.io/configuration
 
 [api]
-listen_addr = "127.0.0.1:3000"
+listen_addr = "0.0.0.0:3000"
 # auth_token = "your-secret-token"
 
 [runtime]
