@@ -41,11 +41,11 @@ show_tree() {
         local child_count=$(echo "$children" | python3 -c "import json,sys; print(len(json.load(sys.stdin)))")
         local child_idx=0
 
-        echo "$children" | python3 -c "
+        echo "$children" | python3 -c '
 import json, sys
 for proc in json.load(sys.stdin):
-    print(proc['pid'])
-" | while read -r child_pid; do
+    print(proc["pid"])
+' | while read -r child_pid; do
             child_idx=$((child_idx + 1))
             local new_prefix
             if [ -n "$prefix" ]; then
@@ -71,16 +71,19 @@ list_roots() {
     echo -e "${BOLD}Top-level processes:${NC}"
     echo ""
 
-    curl -s "$BASE_URL/processes" | python3 << 'EOF'
+    curl -s "$BASE_URL/processes" | python3 -c '
 import json, sys
 processes = json.load(sys.stdin)
 # Find processes with no parent or parent not in list
-pids = {p['pid'] for p in processes}
-roots = [p for p in processes if p.get('ppid', 0) not in pids][:10]
+pids = {p["pid"] for p in processes}
+roots = [p for p in processes if p.get("ppid", 0) not in pids][:10]
 
 for proc in roots:
-    print(f"  {proc['pid']:>8} {proc['comm'][:20]:<20} {proc.get('mem_pct', 0):>6.1f}%")
-EOF
+    pid = proc["pid"]
+    comm = proc["comm"][:20]
+    mem = proc.get("mem_pct", 0)
+    print(f"  {pid:>8} {comm:<20} {mem:>6.1f}%")
+'
 }
 
 if [ $# -eq 0 ]; then

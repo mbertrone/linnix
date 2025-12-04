@@ -20,7 +20,7 @@ if [ "$actions" = "[]" ] || [ -z "$actions" ]; then
     exit 0
 fi
 
-echo "$actions" | python3 << 'EOF'
+echo "$actions" | python3 -c '
 import json, sys
 from datetime import datetime
 from collections import Counter
@@ -29,9 +29,9 @@ actions = json.load(sys.stdin)
 
 # Statistics
 total = len(actions)
-by_status = Counter(a['status'] for a in actions)
-by_type = Counter(a['action']['type'] for a in actions)
-by_source = Counter(a['source'] for a in actions)
+by_status = Counter(a["status"] for a in actions)
+by_type = Counter(a["action"]["type"] for a in actions)
+by_source = Counter(a["source"] for a in actions)
 
 print(f"Total Actions: {total}")
 print("")
@@ -55,10 +55,14 @@ print("Recent Actions:")
 print("")
 
 for action in actions[:10]:
-    status_icon = "✓" if action['status'] == "approved" else "✗" if action['status'] == "rejected" else "⏸"
-    created = datetime.fromtimestamp(action['created_at']).strftime('%Y-%m-%d %H:%M:%S')
-    print(f"{status_icon} [{action['id']}] {action['status']}")
-    print(f"   {action['action']['type']} - {created}")
-    print(f"   {action['reason']}")
+    status = action["status"]
+    status_icon = "✓" if status == "approved" else "✗" if status == "rejected" else "⏸"
+    created = datetime.fromtimestamp(action["created_at"]).strftime("%Y-%m-%d %H:%M:%S")
+    aid = action["id"]
+    atype = action["action"]["type"]
+    reason = action["reason"]
+    print(f"{status_icon} [{aid}] {status}")
+    print(f"   {atype} - {created}")
+    print(f"   {reason}")
     print("")
-EOF
+'

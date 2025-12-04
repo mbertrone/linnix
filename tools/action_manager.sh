@@ -21,22 +21,29 @@ show_actions() {
         return 1
     fi
 
-    echo "$actions" | python3 << 'EOF'
+    echo "$actions" | python3 -c '
 import json, sys
 from datetime import datetime
 
 for action in json.load(sys.stdin):
-    print(f"\n[{action['id']}] {action['status'].upper()}")
-    print(f"  Type:    {action['action']['type']}")
-    if 'pid' in action['action']:
-        print(f"  Target:  PID {action['action']['pid']}")
-    print(f"  Reason:  {action['reason']}")
-    print(f"  Source:  {action['source']}")
-    created = datetime.fromtimestamp(action['created_at']).strftime('%Y-%m-%d %H:%M:%S')
-    expires = datetime.fromtimestamp(action['expires_at']).strftime('%Y-%m-%d %H:%M:%S')
+    aid = action["id"]
+    status = action["status"].upper()
+    atype = action["action"]["type"]
+    reason = action["reason"]
+    source = action["source"]
+    created = datetime.fromtimestamp(action["created_at"]).strftime("%Y-%m-%d %H:%M:%S")
+    expires = datetime.fromtimestamp(action["expires_at"]).strftime("%Y-%m-%d %H:%M:%S")
+
+    print(f"\n[{aid}] {status}")
+    print(f"  Type:    {atype}")
+    if "pid" in action["action"]:
+        pid = action["action"]["pid"]
+        print(f"  Target:  PID {pid}")
+    print(f"  Reason:  {reason}")
+    print(f"  Source:  {source}")
     print(f"  Created: {created}")
     print(f"  Expires: {expires}")
-EOF
+'
     return 0
 }
 

@@ -18,30 +18,40 @@ case "$FORMAT" in
     influx|influxdb)
         # InfluxDB line protocol format
         system=$(curl -s "$BASE_URL/system")
-        echo "$system" | python3 << 'EOF'
+        echo "$system" | python3 -c '
 import json, sys, time
 data = json.load(sys.stdin)
 ts = int(time.time() * 1000000000)  # nanoseconds
-print(f"system,host=linnix cpu_percent={data['cpu_percent']} {ts}")
-print(f"system,host=linnix mem_percent={data['mem_percent']} {ts}")
-print(f"system,host=linnix psi_cpu={data['psi_cpu_some_avg10']} {ts}")
-print(f"system,host=linnix psi_memory={data['psi_memory_some_avg10']} {ts}")
-print(f"system,host=linnix psi_io={data['psi_io_some_avg10']} {ts}")
-EOF
+cpu = data["cpu_percent"]
+mem = data["mem_percent"]
+psi_cpu = data["psi_cpu_some_avg10"]
+psi_mem = data["psi_memory_some_avg10"]
+psi_io = data["psi_io_some_avg10"]
+print(f"system,host=linnix cpu_percent={cpu} {ts}")
+print(f"system,host=linnix mem_percent={mem} {ts}")
+print(f"system,host=linnix psi_cpu={psi_cpu} {ts}")
+print(f"system,host=linnix psi_memory={psi_mem} {ts}")
+print(f"system,host=linnix psi_io={psi_io} {ts}")
+'
         ;;
     csv)
         echo "timestamp,metric,value"
         system=$(curl -s "$BASE_URL/system")
-        echo "$system" | python3 << 'EOF'
+        echo "$system" | python3 -c '
 import json, sys
 data = json.load(sys.stdin)
-ts = data['timestamp']
-print(f"{ts},cpu_percent,{data['cpu_percent']}")
-print(f"{ts},mem_percent,{data['mem_percent']}")
-print(f"{ts},psi_cpu,{data['psi_cpu_some_avg10']}")
-print(f"{ts},psi_memory,{data['psi_memory_some_avg10']}")
-print(f"{ts},psi_io,{data['psi_io_some_avg10']}")
-EOF
+ts = data["timestamp"]
+cpu = data["cpu_percent"]
+mem = data["mem_percent"]
+psi_cpu = data["psi_cpu_some_avg10"]
+psi_mem = data["psi_memory_some_avg10"]
+psi_io = data["psi_io_some_avg10"]
+print(f"{ts},cpu_percent,{cpu}")
+print(f"{ts},mem_percent,{mem}")
+print(f"{ts},psi_cpu,{psi_cpu}")
+print(f"{ts},psi_memory,{psi_mem}")
+print(f"{ts},psi_io,{psi_io}")
+'
         ;;
     *)
         echo "Usage: $0 {prometheus|json|influx|csv}"

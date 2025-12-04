@@ -41,13 +41,19 @@ generate_report() {
 
     if [ "$format" = "csv" ]; then
         echo "ID,Timestamp,Type,Target,PSI_CPU,CPU%,Action"
-        echo "$incidents" | python3 << 'EOF'
+        echo "$incidents" | python3 -c '
 import json, sys
 from datetime import datetime
 for inc in json.load(sys.stdin):
-    ts = datetime.fromtimestamp(inc['timestamp']).strftime('%Y-%m-%d %H:%M:%S')
-    print(f"{inc['id']},{ts},{inc['event_type']},{inc['target_name']},{inc['psi_cpu']},{inc['cpu_percent']},{inc['action']}")
-EOF
+    ts = datetime.fromtimestamp(inc["timestamp"]).strftime("%Y-%m-%d %H:%M:%S")
+    iid = inc["id"]
+    etype = inc["event_type"]
+    target = inc["target_name"]
+    psi = inc["psi_cpu"]
+    cpu = inc["cpu_percent"]
+    action = inc["action"]
+    print(f"{iid},{ts},{etype},{target},{psi},{cpu},{action}")
+'
         return
     fi
 
@@ -70,17 +76,20 @@ EOF
         echo "-------"
     fi
 
-    echo "$summary" | python3 << EOF
+    echo "$summary" | python3 -c '
 import json, sys
 data = json.load(sys.stdin)
-print(f"Total Incidents:     {data.get('total', 0)}")
-print(f"Analyzed:            {data.get('analyzed', 0)}")
-print(f"Pending Analysis:    {data.get('pending_analysis', 0)}")
+total = data.get("total", 0)
+analyzed = data.get("analyzed", 0)
+pending = data.get("pending_analysis", 0)
+print(f"Total Incidents:     {total}")
+print(f"Analyzed:            {analyzed}")
+print(f"Pending Analysis:    {pending}")
 print("")
 print("By Type:")
-for event_type, count in data.get('by_event_type', {}).items():
+for event_type, count in data.get("by_event_type", {}).items():
     print(f"  {event_type}: {count}")
-EOF
+'
 
     echo ""
     if [ "$format" = "md" ]; then
@@ -94,21 +103,29 @@ EOF
         echo ""
     fi
 
-    echo "$incidents" | python3 << EOF
+    echo "$incidents" | python3 -c "
 import json, sys
 from datetime import datetime
 incidents = json.load(sys.stdin)
+is_md = '$format' == 'md'
 for inc in incidents[:20]:
     ts = datetime.fromtimestamp(inc['timestamp']).strftime('%Y-%m-%d %H:%M:%S')
-    if "$format" == "md":
-        print(f"| {inc['id']} | {ts} | {inc['event_type']} | {inc['target_name']} | {inc['psi_cpu']:.1f}% | {inc['action']} |")
+    iid = inc['id']
+    etype = inc['event_type']
+    target = inc['target_name']
+    pid = inc['target_pid']
+    psi = inc['psi_cpu']
+    cpu = inc['cpu_percent']
+    action = inc['action']
+    if is_md:
+        print(f'| {iid} | {ts} | {etype} | {target} | {psi:.1f}% | {action} |')
     else:
-        print(f"[{inc['id']}] {ts} - {inc['event_type']}")
-        print(f"    Target: {inc['target_name']} (PID {inc['target_pid']})")
-        print(f"    PSI CPU: {inc['psi_cpu']:.1f}% | CPU: {inc['cpu_percent']:.1f}%")
-        print(f"    Action: {inc['action']}")
-        print("")
-EOF
+        print(f'[{iid}] {ts} - {etype}')
+        print(f'    Target: {target} (PID {pid})')
+        print(f'    PSI CPU: {psi:.1f}% | CPU: {cpu:.1f}%')
+        print(f'    Action: {action}')
+        print('')
+"
 }
 
 # Parse arguments

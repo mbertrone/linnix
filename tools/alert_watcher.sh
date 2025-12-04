@@ -73,23 +73,26 @@ curl -s -N "$BASE_URL/alerts" | while read -r line; do
         fi
 
         # Parse alert
-        parsed=$(echo "$json" | python3 << 'EOF' 2>/dev/null
+        parsed=$(echo "$json" | python3 -c '
 import json, sys
 from datetime import datetime
 try:
     alert = json.load(sys.stdin)
-    timestamp = datetime.now().strftime('%H:%M:%S')
-    rule = alert.get('rule', 'unknown')
-    severity = alert.get('severity', 'info')
-    message = alert.get('message', '')
-    target = alert.get('target', {})
-    target_info = f"PID {target.get('pid', 'N/A')} ({target.get('name', 'N/A')})" if target else ''
-
+    timestamp = datetime.now().strftime("%H:%M:%S")
+    rule = alert.get("rule", "unknown")
+    severity = alert.get("severity", "info")
+    message = alert.get("message", "")
+    target = alert.get("target", {})
+    if target:
+        pid = target.get("pid", "N/A")
+        name = target.get("name", "N/A")
+        target_info = f"PID {pid} ({name})"
+    else:
+        target_info = ""
     print(f"{timestamp}|{severity}|{rule}|{message}|{target_info}")
 except:
     pass
-EOF
-)
+' 2>/dev/null)
 
         if [ -n "$parsed" ]; then
             IFS='|' read -r timestamp severity rule message target_info <<< "$parsed"

@@ -16,7 +16,7 @@ echo ""
 incidents=$(curl -s "$BASE_URL/incidents")
 
 # Group by time buckets (hourly)
-echo "$incidents" | python3 << 'EOF'
+echo "$incidents" | python3 -c '
 import json, sys
 from datetime import datetime, timedelta
 from collections import defaultdict
@@ -29,14 +29,16 @@ if not incidents:
 # Group by hour
 hourly = defaultdict(list)
 for inc in incidents:
-    dt = datetime.fromtimestamp(inc['timestamp'])
-    hour_key = dt.strftime('%Y-%m-%d %H:00')
+    dt = datetime.fromtimestamp(inc["timestamp"])
+    hour_key = dt.strftime("%Y-%m-%d %H:00")
     hourly[hour_key].append(inc)
 
 # Sort by time
 sorted_hours = sorted(hourly.keys())
 
-print(f"Timeline: {sorted_hours[0]} to {sorted_hours[-1]}")
+first = sorted_hours[0]
+last = sorted_hours[-1]
+print(f"Timeline: {first} to {last}")
 print("")
 
 # Display timeline
@@ -52,24 +54,26 @@ print("Pattern Analysis:")
 # Time of day distribution
 hour_dist = defaultdict(int)
 for inc in incidents:
-    dt = datetime.fromtimestamp(inc['timestamp'])
+    dt = datetime.fromtimestamp(inc["timestamp"])
     hour_dist[dt.hour] += 1
 
 peak_hour = max(hour_dist.items(), key=lambda x: x[1])
-print(f"  Peak Hour: {peak_hour[0]}:00 ({peak_hour[1]} incidents)")
+ph_hour = peak_hour[0]
+ph_count = peak_hour[1]
+print(f"  Peak Hour: {ph_hour}:00 ({ph_count} incidents)")
 
 # By type
 type_dist = defaultdict(int)
 for inc in incidents:
-    type_dist[inc['event_type']] += 1
+    type_dist[inc["event_type"]] += 1
 
 print("  By Type:")
 for event_type, count in sorted(type_dist.items(), key=lambda x: -x[1]):
     print(f"    {event_type}: {count}")
 
 # Recovery time stats
-recovery_times = [inc.get('recovery_time_ms') for inc in incidents if inc.get('recovery_time_ms')]
+recovery_times = [inc.get("recovery_time_ms") for inc in incidents if inc.get("recovery_time_ms")]
 if recovery_times:
     avg_recovery = sum(recovery_times) / len(recovery_times)
     print(f"  Avg Recovery: {avg_recovery:.0f}ms")
-EOF
+'

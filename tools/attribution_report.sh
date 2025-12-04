@@ -25,7 +25,7 @@ if [ -z "$attribution" ] || [ "$attribution" = "[]" ]; then
     exit 0
 fi
 
-echo "$attribution" | python3 << 'EOF'
+echo "$attribution" | python3 -c '
 import json, sys
 from collections import defaultdict
 
@@ -34,11 +34,11 @@ attributions = json.load(sys.stdin)
 # Group by namespace
 by_namespace = defaultdict(list)
 for attr in attributions:
-    ns = attr.get('offender_namespace', 'unknown')
+    ns = attr.get("offender_namespace", "unknown")
     by_namespace[ns].append(attr)
 
 # Sort by blame score
-sorted_attr = sorted(attributions, key=lambda x: x.get('blame_score', 0), reverse=True)
+sorted_attr = sorted(attributions, key=lambda x: x.get("blame_score", 0), reverse=True)
 
 print("Top PSI Contributors:")
 print("")
@@ -46,9 +46,9 @@ print(f"{'Rank':<6} {'Pod Name':<30} {'Namespace':<20} {'Score':<10}")
 print("-" * 76)
 
 for idx, attr in enumerate(sorted_attr[:15], 1):
-    pod = attr.get('offender_pod', 'unknown')[:29]
-    ns = attr.get('offender_namespace', 'unknown')[:19]
-    score = attr.get('blame_score', 0)
+    pod = attr.get("offender_pod", "unknown")[:29]
+    ns = attr.get("offender_namespace", "unknown")[:19]
+    score = attr.get("blame_score", 0)
     print(f"{idx:<6} {pod:<30} {ns:<20} {score:<10.2f}")
 
 print("")
@@ -56,16 +56,18 @@ print("By Namespace:")
 print("")
 
 for ns, attrs in sorted(by_namespace.items(), key=lambda x: len(x[1]), reverse=True):
-    total_score = sum(a.get('blame_score', 0) for a in attrs)
-    print(f"  {ns}: {len(attrs)} contributors, total score: {total_score:.2f}")
+    total_score = sum(a.get("blame_score", 0) for a in attrs)
+    contributors = len(attrs)
+    print(f"  {ns}: {contributors} contributors, total score: {total_score:.2f}")
 
 print("")
 print("Analysis:")
 total_contributors = len(attributions)
 if total_contributors > 0:
-    top_score = sorted_attr[0].get('blame_score', 0)
+    top_score = sorted_attr[0].get("blame_score", 0)
+    top_pod = sorted_attr[0].get("offender_pod")
     print(f"  Total contributors: {total_contributors}")
     print(f"  Top offender score: {top_score:.2f}")
     if top_score > 50:
-        print(f"  ⚠ High blame score detected - investigate {sorted_attr[0].get('offender_pod')}")
-EOF
+        print(f"  ⚠ High blame score detected - investigate {top_pod}")
+'

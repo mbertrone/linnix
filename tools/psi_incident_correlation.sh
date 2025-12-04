@@ -16,20 +16,24 @@ incidents=$(curl -s "$BASE_URL/incidents")
 system=$(curl -s "$BASE_URL/system")
 
 echo -e "${BOLD}Current System State:${NC}"
-echo "$system" | python3 << 'EOF'
+echo "$system" | python3 -c '
 import json, sys
 data = json.load(sys.stdin)
-print(f"  CPU Usage: {data['cpu_percent']:.1f}%")
-print(f"  PSI CPU:   {data['psi_cpu_some_avg10']:.1f}%")
-print(f"  PSI Mem:   {data['psi_memory_some_avg10']:.1f}%")
-print(f"  PSI I/O:   {data['psi_io_some_avg10']:.1f}%")
-EOF
+cpu = data["cpu_percent"]
+psi_cpu = data["psi_cpu_some_avg10"]
+psi_mem = data["psi_memory_some_avg10"]
+psi_io = data["psi_io_some_avg10"]
+print(f"  CPU Usage: {cpu:.1f}%")
+print(f"  PSI CPU:   {psi_cpu:.1f}%")
+print(f"  PSI Mem:   {psi_mem:.1f}%")
+print(f"  PSI I/O:   {psi_io:.1f}%")
+'
 
 echo ""
 echo -e "${BOLD}Incident PSI Analysis:${NC}"
 echo ""
 
-echo "$incidents" | python3 << 'EOF'
+echo "$incidents" | python3 -c '
 import json, sys
 from statistics import mean, stdev
 
@@ -39,28 +43,39 @@ if not incidents:
     sys.exit(0)
 
 # Categorize by PSI level
-low_psi = [inc for inc in incidents if inc['psi_cpu'] < 40]
-medium_psi = [inc for inc in incidents if 40 <= inc['psi_cpu'] < 60]
-high_psi = [inc for inc in incidents if inc['psi_cpu'] >= 60]
+low_psi = [inc for inc in incidents if inc["psi_cpu"] < 40]
+medium_psi = [inc for inc in incidents if 40 <= inc["psi_cpu"] < 60]
+high_psi = [inc for inc in incidents if inc["psi_cpu"] >= 60]
+
+low_count = len(low_psi)
+med_count = len(medium_psi)
+high_count = len(high_psi)
 
 print(f"PSI Distribution at Incident Time:")
-print(f"  Low PSI (<40%):     {len(low_psi):3d} incidents")
-print(f"  Medium PSI (40-60%): {len(medium_psi):3d} incidents")
-print(f"  High PSI (>60%):     {len(high_psi):3d} incidents")
+print(f"  Low PSI (<40%):     {low_count:3d} incidents")
+print(f"  Medium PSI (40-60%): {med_count:3d} incidents")
+print(f"  High PSI (>60%):     {high_count:3d} incidents")
 print("")
 
 # PSI stats
-psi_values = [inc['psi_cpu'] for inc in incidents]
+psi_values = [inc["psi_cpu"] for inc in incidents]
 if len(psi_values) > 1:
+    psi_mean = mean(psi_values)
+    psi_stdev = stdev(psi_values)
+    psi_min = min(psi_values)
+    psi_max = max(psi_values)
     print(f"PSI CPU Statistics:")
-    print(f"  Mean:   {mean(psi_values):.1f}%")
-    print(f"  StdDev: {stdev(psi_values):.1f}%")
-    print(f"  Min:    {min(psi_values):.1f}%")
-    print(f"  Max:    {max(psi_values):.1f}%")
+    print(f"  Mean:   {psi_mean:.1f}%")
+    print(f"  StdDev: {psi_stdev:.1f}%")
+    print(f"  Min:    {psi_min:.1f}%")
+    print(f"  Max:    {psi_max:.1f}%")
     print("")
 
 # Correlation: CPU vs PSI
 print(f"CPU vs PSI Correlation:")
 for inc in incidents[:5]:
-    print(f"  CPU: {inc['cpu_percent']:5.1f}% | PSI: {inc['psi_cpu']:5.1f}% | Target: {inc['target_name']}")
-EOF
+    cpu = inc["cpu_percent"]
+    psi = inc["psi_cpu"]
+    target = inc["target_name"]
+    print(f"  CPU: {cpu:5.1f}% | PSI: {psi:5.1f}% | Target: {target}")
+'
