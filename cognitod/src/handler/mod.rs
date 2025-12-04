@@ -7,6 +7,9 @@ use tokio::fs::OpenOptions;
 use tokio::io::AsyncWriteExt;
 use tokio::sync::Mutex;
 
+pub mod recording;
+pub use recording::RecordingHandler;
+
 #[async_trait]
 pub trait Handler: Send + Sync {
     #[allow(dead_code)]

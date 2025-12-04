@@ -416,3 +416,103 @@ events-20250101-130000.ndjson
 - Start with simple file I/O before optimizing
 - Test with small datasets first
 - Implement error handling from the beginning
+
+---
+
+## Quick Start Guide
+
+### Prerequisites
+
+Before running cognitod with record/replay, you need to build both the userspace binary and eBPF programs:
+
+```bash
+# 1. Build userspace binary
+cargo build --release
+
+# 2. Install eBPF build dependencies (one-time setup)
+rustup component add rust-src --toolchain nightly-2024-12-10-x86_64-unknown-linux-gnu
+cargo install bpf-linker
+
+# 3. Build eBPF programs
+cargo xtask build-ebpf --release
+
+# 4. Verify eBPF binaries exist
+ls -lh target/bpfel-unknown-none/release/linnix-ai-ebpf-ebpf
+```
+
+### Basic Recording
+
+```bash
+# Start recording (runs in foreground, Ctrl+C to stop)
+sudo ./target/release/cognitod --record /tmp/events.ndjson
+```
+
+In another terminal, generate some activity:
+```bash
+ls -la
+ps aux
+echo "test"
+# ... any commands you want to capture
+```
+
+Press Ctrl+C to stop recording, then inspect the output:
+```bash
+# View first few events (requires jq)
+head -5 /tmp/events.ndjson | jq .
+
+# Count total events recorded
+wc -l /tmp/events.ndjson
+
+# Check file size
+ls -lh /tmp/events.ndjson
+```
+
+### Basic Replay
+
+```bash
+# Replay at normal speed (respects original timing)
+sudo ./target/release/cognitod --replay /tmp/events.ndjson
+
+# Replay at 10x speed
+sudo ./target/release/cognitod --replay /tmp/events.ndjson --replay-speed 10.0
+
+# Replay at 0.5x speed (slower than real-time)
+sudo ./target/release/cognitod --replay /tmp/events.ndjson --replay-speed 0.5
+```
+
+### Advanced: Testing with Rules
+
+If you have rules configured, they will trigger during replay:
+
+```bash
+# Record while running a workload
+sudo ./target/release/cognitod --record /tmp/workload.ndjson &
+RECORD_PID=$!
+
+# Run your workload
+./my-test-workload.sh
+
+# Stop recording
+sudo kill $RECORD_PID
+
+# Replay with rules engine active
+sudo ./target/release/cognitod --replay /tmp/workload.ndjson --handler rules:configs/rules.yaml
+```
+
+### Troubleshooting
+
+**Error: "BPF object not found"**
+- Run: `cargo xtask build-ebpf --release`
+- Verify: `ls target/bpfel-unknown-none/release/linnix-ai-ebpf-ebpf`
+
+**Error: "Cannot use --record and --replay simultaneously"**
+- These flags are mutually exclusive - use one or the other
+
+**Error: "linker `bpf-linker` not found"**
+- Run: `cargo install bpf-linker`
+
+**Git authentication errors during eBPF build**
+```bash
+git config --global url."https://github.com/".insteadOf git@github.com:
+mkdir -p ~/.cargo && echo -e "[net]\ngit-fetch-with-cli = true" >> ~/.cargo/config.toml
+```
