@@ -294,7 +294,7 @@ The current implementation records **only process events**:
 - Circuit breaker incidents
 - Real-time resource thresholds
 
-These will be added in Phase 2 (see `docs/RECORD_REPLAY_PLAN.md`).
+These will be added in Phase 2 (see `docs/RECORD_REPLAY_GUIDE.md`).
 
 ## Troubleshooting
 
@@ -320,6 +320,6 @@ To add new examples:
 
 ## See Also
 
-- [Full Implementation Plan](docs/RECORD_REPLAY_PLAN.md)
-- [Testing Guide](docs/RECORD_REPLAY_PLAN.md#quick-start-guide)
+- [Implementation Guide](docs/RECORD_REPLAY_GUIDE.md)
+- [Quick Start Guide](docs/RECORD_REPLAY_GUIDE.md#quick-start-guide)
 - [Build Instructions](../../README.md)

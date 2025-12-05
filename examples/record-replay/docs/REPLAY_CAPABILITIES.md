@@ -366,7 +366,7 @@ pub struct SystemSnapshot {
 }
 ```
 
-**When available**: Phase 2 (see `RECORD_REPLAY_PLAN.md`)
+**When available**: Phase 2 (see `RECORD_REPLAY_GUIDE.md`)
 
 ---
 
@@ -615,7 +615,7 @@ To support resource-based incident detection, Phase 2 will add:
    - PSI-based attribution during replay
    - Resource trend analysis
 
-See `RECORD_REPLAY_PLAN.md` for Phase 2 implementation details.
+See `RECORD_REPLAY_GUIDE.md` for Phase 2 implementation details.
 
 ---
 
