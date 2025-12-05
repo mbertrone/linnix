@@ -1,0 +1,42 @@
+Recording phase alerts:
+11 /tmp/alerts-recording-phase.ndjson
+Replay phase alerts:
+11 /tmp/alerts-replay-phase.ndjson
+Recording phase rules:
+      2 fork_storm_burst
+      1 fork_storm_extreme
+      2 fork_storm_sustained
+      2 rapid_exec_completions
+      2 runaway_parent_tree
+      2 short_lived_flood
+Replay phase rules:
+      2 fork_storm_burst
+      1 fork_storm_extreme
+      2 fork_storm_sustained
+      2 rapid_exec_completions
+      2 runaway_parent_tree
+      2 short_lived_flood
+Recording alerts:
+{"rule":"fork_storm_burst","severity":"Info","message":"fork burst: 30 forks in 5s"}
+{"rule":"fork_storm_burst","severity":"Info","message":"fork burst: 86 forks in 5s"}
+{"rule":"fork_storm_extreme","severity":"Info","message":"fork rate exceeded 50 per second"}
+{"rule":"fork_storm_sustained","severity":"High","message":"fork rate exceeded 10 per second"}
+{"rule":"fork_storm_sustained","severity":"High","message":"fork rate exceeded 10 per second"}
+{"rule":"rapid_exec_completions","severity":"Medium","message":"exec rate exceeded 60/min"}
+{"rule":"rapid_exec_completions","severity":"Medium","message":"exec rate exceeded 60/min"}
+{"rule":"runaway_parent_tree","severity":"Info","message":"ppid 370972 spawned 15 forks in 10s"}
+{"rule":"runaway_parent_tree","severity":"Info","message":"ppid 370972 spawned 19 forks in 10s"}
+{"rule":"short_lived_flood","severity":"High","message":"40 short-lived execs (<= 200ms) in 10s"}
+{"rule":"short_lived_flood","severity":"High","message":"40 short-lived execs (<= 200ms) in 10s"}
+Replay alerts:
+{"rule":"fork_storm_burst","severity":"Info","message":"fork burst: 30 forks in 5s"}
+{"rule":"fork_storm_burst","severity":"Info","message":"fork burst: 83 forks in 5s"}
+{"rule":"fork_storm_extreme","severity":"Info","message":"fork rate exceeded 50 per second"}
+{"rule":"fork_storm_sustained","severity":"High","message":"fork rate exceeded 10 per second"}
+{"rule":"fork_storm_sustained","severity":"High","message":"fork rate exceeded 10 per second"}
+{"rule":"rapid_exec_completions","severity":"Medium","message":"exec rate exceeded 60/min"}
+{"rule":"rapid_exec_completions","severity":"Medium","message":"exec rate exceeded 60/min"}
+{"rule":"runaway_parent_tree","severity":"Info","message":"ppid 370972 spawned 15 forks in 10s"}
+{"rule":"runaway_parent_tree","severity":"Info","message":"ppid 370972 spawned 19 forks in 10s"}
+{"rule":"short_lived_flood","severity":"High","message":"40 short-lived execs (<= 200ms) in 10s"}
+{"rule":"short_lived_flood","severity":"High","message":"40 short-lived execs (<= 200ms) in 10s"}
