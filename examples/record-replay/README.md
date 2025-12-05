@@ -10,7 +10,7 @@ The record/replay feature allows you to:
 - Test detection rules and handlers without needing live workloads
 - Share reproducible test cases with your team
 
-## Sample Data
+## Sample Data and Test Scripts
 
 **`sample-events.ndjson`** - A sample recording containing ~270 process events captured during a typical SSH session, including:
 - SSH connection and authentication (sshd, PAM modules)
@@ -18,12 +18,68 @@ The record/replay feature allows you to:
 - System utilities (landscape-sysinfo, motd scripts)
 - Various command executions
 
+**`fork-storm-example.ndjson`** - A comprehensive fork storm recording with 8,226 events over 52 seconds:
+- 2,783 Fork events (sustained high fork rate)
+- 2,774 Exit events (process completions)
+- 2,669 Exec events (command executions)
+- Generated using `./fork_storm.sh 100 10` (multiple runs)
+- Perfect for testing fork storm detection rules
+- Triggers multiple detection rules: fork_storm_burst, fork_storm_sustained, runaway_parent_tree
+- File size: 2.4 MB
+
+**`fork_storm.sh`** - Simple, focused fork storm generator:
+- Configurable intensity: low, medium, high, extreme
+- Generates multiple detection patterns: sustained rate, bursts, runaway trees
+- Safe cleanup on exit
+
+**`test_fork_storm.sh`** - Automated test suite that records, generates, and replays fork storms:
+- Complete end-to-end testing
+- Automatic detection verification
+- Generates test reports
+
+**`fork-storm-rules.yaml`** - Detection rules optimized for fork storm testing:
+- Multiple detection thresholds
+- Covers all fork storm patterns
+- Tuned for test script intensities
+
 ## Quick Start
 
-### 1. Replay the Sample Events
+### 1. Replay the Fork Storm Example (Recommended)
+
+Test the fork storm detection system with the included example recording:
 
 ```bash
-# Replay at normal speed (respects original timing)
+# Replay the fork storm recording with detection rules (5x speed)
+sudo ../target/release/cognitod \
+  --replay examples/record-replay/fork-storm-example.ndjson \
+  --replay-speed 5.0 \
+  --handler rules:examples/record-replay/fork-storm-rules.yaml
+```
+
+**What you'll see:**
+- 8,226 events replayed in ~10 seconds (5x speed)
+- Multiple detection alerts triggered:
+  - `fork_storm_sustained` - High sustained fork rate detected
+  - `fork_storm_burst` - Sudden spike in forks
+  - `runaway_parent_tree` - Single parent spawning many children
+  - `fork_storm_extreme` - Critical fork rate threshold exceeded
+
+**Check the results:**
+```bash
+# View triggered alerts
+cat /var/log/linnix/alerts.ndjson | jq '.'
+
+# Count alerts by rule
+jq -r '.rule' /var/log/linnix/alerts.ndjson | sort | uniq -c
+
+# Query via API (while cognitod is running)
+curl -s http://127.0.0.1:3000/timeline | jq '.[] | {rule: .alert.rule, severity: .alert.severity}'
+```
+
+### 2. Replay Other Sample Events
+
+```bash
+# Replay SSH session recording at normal speed
 sudo ../target/release/cognitod --replay examples/record-replay/sample-events.ndjson
 
 # Replay at 10x speed (faster testing)
@@ -34,7 +90,7 @@ sudo ../target/release/cognitod --replay examples/record-replay/sample-events.nd
   --handler rules:configs/rules.yaml
 ```
 
-### 2. Record Your Own Events
+### 3. Record Your Own Events
 
 ```bash
 # Start recording (press Ctrl+C to stop)
@@ -146,9 +202,61 @@ jq -r '.event.base.comm | @json' sample-events.ndjson | \
 jq 'select(.event.base.pid == 370104)' sample-events.ndjson
 ```
 
-### Testing Detection Rules
+### Fork Storm Testing (Automated)
 
-**Test fork storm detection:**
+**Quick automated test:**
+```bash
+cd examples/record-replay
+sudo ./test_fork_storm.sh
+```
+
+This will:
+1. Start recording
+2. Generate a medium-intensity fork storm for 10 seconds
+3. Stop recording
+4. Replay with detection rules
+5. Verify detections occurred
+
+**Customize intensity:**
+```bash
+# Low intensity (10 forks/sec, good for threshold testing)
+sudo ./test_fork_storm.sh --intensity low
+
+# Medium intensity (50 forks/sec, default)
+sudo ./test_fork_storm.sh --intensity medium
+
+# High intensity (100 forks/sec, stress testing)
+sudo ./test_fork_storm.sh --intensity high --duration 15
+
+# Extreme intensity (200 forks/sec, may stress system)
+sudo ./test_fork_storm.sh --intensity extreme --duration 5
+```
+
+**Keep recording for analysis:**
+```bash
+sudo ./test_fork_storm.sh --intensity high --keep-recording
+# Recording saved to /tmp/fork-storm-*.ndjson
+```
+
+**Manual fork storm generation:**
+```bash
+# Just generate the storm without recording
+./generate_fork_storm.sh --intensity medium --duration 10
+
+# With custom recording
+sudo ../target/release/cognitod --record /tmp/my-test.ndjson &
+RECORD_PID=$!
+./generate_fork_storm.sh --intensity high --duration 15
+sudo kill $RECORD_PID
+
+# Replay
+sudo ../target/release/cognitod --replay /tmp/my-test.ndjson \
+  --handler rules:fork-storm-rules.yaml --replay-speed 5.0
+```
+
+### Testing Detection Rules (Manual)
+
+**Test fork storm detection (manual method):**
 ```bash
 # Generate fork storm during recording
 (while true; do (sleep 0.1 &); done) &
