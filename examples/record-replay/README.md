@@ -320,6 +320,6 @@ To add new examples:
 
 ## See Also
 
-- [Full Implementation Plan](../../docs/RECORD_REPLAY_PLAN.md)
-- [Testing Guide](../../docs/RECORD_REPLAY_PLAN.md#quick-start-guide)
+- [Full Implementation Plan](docs/RECORD_REPLAY_PLAN.md)
+- [Testing Guide](docs/RECORD_REPLAY_PLAN.md#quick-start-guide)
 - [Build Instructions](../../README.md)
