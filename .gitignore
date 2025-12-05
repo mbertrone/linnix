@@ -101,6 +101,7 @@ docs/images/README.md
 !docs/FAQ.md
 !docs/AWS_EC2_DEPLOYMENT.md
 !docs/BUILDING.md
+!docs/KIND_DEPLOYMENT.md
 ROADMAP.md
 run_manual.sh
 run-cognitod-k8s.sh

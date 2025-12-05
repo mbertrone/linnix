@@ -4,6 +4,10 @@ This directory contains manifests to deploy Linnix as a DaemonSet on your Kubern
 
 ## Quick Start
 
+**For local development with kind**, see the [Kind Deployment Guide](../docs/KIND_DEPLOYMENT.md).
+
+**For production clusters**:
+
 ```bash
 kubectl apply -f k8s/
 ```
@@ -12,6 +16,13 @@ This will create:
 - `ConfigMap/linnix-config`: Default configuration (monitor mode).
 - `ServiceAccount/linnix-agent`: Identity for the agent.
 - `DaemonSet/linnix-agent`: The agent pod on every node.
+
+## Manifests
+
+- `rbac.yaml`: ServiceAccount, ClusterRole, and ClusterRoleBinding
+- `configmap.yaml`: Configuration for cognitod
+- `daemonset.yaml`: Production DaemonSet (one pod per node)
+- `local-deployment.yaml`: Development Deployment for kind (single pod)
 
 ## Configuration
 

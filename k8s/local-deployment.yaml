@@ -1,0 +1,119 @@
+# Local Development Deployment for Kind
+#
+# This deployment is optimized for local development with kind clusters.
+# Use this instead of daemonset.yaml for faster iteration during development.
+#
+# Key differences from daemonset.yaml:
+# - Uses Deployment instead of DaemonSet (single replica)
+# - imagePullPolicy: Never (uses locally loaded images)
+# - Default image tag: cognitod:local
+#
+# Usage:
+#   1. Build image: docker build -t cognitod:local .
+#   2. Load to kind: kind load docker-image cognitod:local --name dev
+#   3. Deploy: kubectl apply -f k8s/rbac.yaml -f k8s/configmap.yaml -f k8s/local-deployment.yaml
+#   4. Access: kubectl port-forward deployment/linnix-agent 3000:3000
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: linnix-agent
+  namespace: default
+  labels:
+    app: linnix
+    env: local
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: linnix
+  template:
+    metadata:
+      labels:
+        app: linnix
+        env: local
+    spec:
+      serviceAccountName: linnix-agent
+      hostPID: true  # Required to monitor host processes
+      containers:
+        - name: cognitod
+          # For local development, use locally built image
+          # Build: docker build -t cognitod:local .
+          # Load:  kind load docker-image cognitod:local --name dev
+          image: cognitod:local
+          imagePullPolicy: Never  # Never pull, always use local image
+
+          securityContext:
+            privileged: true  # Required for eBPF
+            # For tighter security (kernel 5.8+):
+            # privileged: false
+            # capabilities:
+            #   add: ["BPF", "PERFMON", "SYS_RESOURCE", "SYS_ADMIN"]
+
+          env:
+            - name: RUST_LOG
+              value: "info"
+            - name: LINNIX_CONFIG
+              value: "/etc/linnix/linnix.toml"
+
+          volumeMounts:
+            - name: config
+              mountPath: /etc/linnix
+              readOnly: true
+            - name: sys-btf
+              mountPath: /sys/kernel/btf/vmlinux
+              readOnly: true
+            - name: debugfs
+              mountPath: /sys/kernel/debug
+
+          resources:
+            limits:
+              memory: 512Mi
+              cpu: 500m
+            requests:
+              memory: 128Mi
+              cpu: 100m
+
+          ports:
+            - containerPort: 3000
+              name: http
+              protocol: TCP
+
+          # Liveness probe - restart if unhealthy
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 3000
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+
+          # Readiness probe - route traffic only when ready
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+
+      volumes:
+        - name: config
+          configMap:
+            name: linnix-config
+        - name: sys-btf
+          hostPath:
+            path: /sys/kernel/btf/vmlinux
+            type: File
+        - name: debugfs
+          hostPath:
+            path: /sys/kernel/debug
+            type: Directory
+
+      # Restart policy
+      restartPolicy: Always
+
+      # DNS policy
+      dnsPolicy: ClusterFirst

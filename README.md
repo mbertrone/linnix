@@ -106,8 +106,9 @@ curl "http://localhost:3000/processes?namespace=payments&sort=psi_contribution"
 
 ## Documentation
 
-- **[Building Guide](docs/BUILDING.md)**: Build Docker images and compile from source
 - **[Getting Started](docs/wiki/Getting-Started.md)**: Installation and first steps
+- **[Building Guide](docs/BUILDING.md)**: Build Docker images and compile from source
+- **[Kind Deployment](docs/KIND_DEPLOYMENT.md)**: Deploy to local Kubernetes with kind
 - **[Configuration Guide](docs/wiki/Configuration-Guide.md)**: Configure monitoring and detection rules
 - **[API Reference](docs/wiki/API-Reference.md)**: HTTP API endpoints
 - **[Full Documentation](docs/wiki/index.md)**: Complete documentation index

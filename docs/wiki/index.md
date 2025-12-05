@@ -10,6 +10,7 @@ Welcome to the official Linnix documentation.
 |---------|-------------|
 | [Getting Started](Getting-Started.md) | Installation and first steps |
 | [Building Guide](../BUILDING.md) | Build Docker images and compile from source |
+| [Kind Deployment](../KIND_DEPLOYMENT.md) | Deploy to local Kubernetes with kind |
 | [Architecture Overview](Architecture-Overview.md) | System design and components |
 | [API Reference](API-Reference.md) | HTTP API endpoints |
 | [Configuration Guide](Configuration-Guide.md) | Config file options |
