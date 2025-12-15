@@ -21,7 +21,7 @@ use tokio::sync::broadcast;
 use tokio::time::{sleep, timeout};
 
 use crate::insights::InsightStore;
-use crate::runtime::start_perf_listener;
+use crate::runtime::{start_perf_listener, start_replay_listener};
 pub use linnix_ai_ebpf_common::PERCENT_MILLI_UNKNOWN;
 pub use linnix_ai_ebpf_common::ProcessEvent as ProcessEventWire;
 pub use linnix_ai_ebpf_common::ProcessEventExt as ProcessEvent;
@@ -97,7 +97,7 @@ use crate::runtime::probes::{ProbeState, RssProbeMode};
 use clap::Parser;
 use cognitod::alerts::RuleEngine;
 use cognitod::config::{Config, OfflineGuard};
-use cognitod::handler::{HandlerList, JsonlHandler};
+use cognitod::handler::{HandlerList, JsonlHandler, RecordingHandler};
 use cognitod::metrics::Metrics;
 use serde_json::json;
 use std::{fs, path::Path};
@@ -149,6 +149,15 @@ struct Args {
     dry_run: bool,
     #[arg(long)]
     probe_only: bool,
+    /// Record eBPF events to file
+    #[arg(long, value_name = "FILE")]
+    record: Option<PathBuf>,
+    /// Replay eBPF events from file
+    #[arg(long, value_name = "FILE")]
+    replay: Option<PathBuf>,
+    /// Replay speed multiplier (default: 1.0 = real-time)
+    #[arg(long, default_value = "1.0")]
+    replay_speed: f32,
 }
 
 /// Generate search paths for BPF objects in canonical order:
@@ -410,6 +419,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let mut _bpf_runtime: Option<BpfRuntimeGuards> = None;
     let mut probe_state = ProbeState::disabled();
 
+    // Skip eBPF initialization if in replay mode
+    let skip_ebpf = args.replay.is_some();
+    if skip_ebpf {
+        info!("[cognitod] Replay mode enabled, skipping eBPF initialization");
+    }
+
     let btf_path = std::env::var("LINNIX_KERNEL_BTF")
         .unwrap_or_else(|_| "/sys/kernel/btf/vmlinux".to_string());
     let btf_available = std::path::Path::new(&btf_path).is_file();
@@ -418,7 +433,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let mut core_signal_ok = false;
     let mut core_mm_ok = false;
 
-    if btf_available {
+    if !skip_ebpf && btf_available {
         match derive_telemetry_config() {
             Ok(result) => {
                 core_signal_ok = result.signal_supported;
@@ -454,7 +469,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
     }
 
-    if matches!(probe_state.rss_probe, RssProbeMode::Disabled) && tracepoint_available {
+    if !skip_ebpf && matches!(probe_state.rss_probe, RssProbeMode::Disabled) && tracepoint_available {
         match read_rss_trace_bytes() {
             Ok((trace_bytes, chosen_path)) => {
                 println!("[cognitod] Using tracepoint fallback object: {chosen_path}");
@@ -614,6 +629,24 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     // Handlers specified on the command line
     let mut handler_list = HandlerList::new();
+
+    // Initialize recording handler if requested
+    if let Some(record_path) = &args.record {
+        if args.replay.is_some() {
+            return Err("Cannot use --record and --replay simultaneously".into());
+        }
+
+        match RecordingHandler::new(record_path.clone()).await {
+            Ok(recording_handler) => {
+                info!("[cognitod] Recording eBPF events to {}", record_path.display());
+                handler_list.register(recording_handler);
+            }
+            Err(e) => {
+                return Err(format!("Failed to initialize recording: {}", e).into());
+            }
+        }
+    }
+
     let enforcement_queue = Some(Arc::new(enforcement::EnforcementQueue::new(300)));
     let mut alert_tx = None;
     for h in handler {
@@ -827,16 +860,46 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // LocalIlmHandlerRag removed (YAGNI cleanup)
 
     let handlers = Arc::new(handler_list);
-    // Pass metrics to your listener
-    if !perf_buffers.is_empty() {
-        start_perf_listener(
-            perf_buffers,
-            Arc::clone(&context),
-            Arc::clone(&metrics),
-            Arc::clone(&handlers),
-            Arc::clone(&offline_guard),
-            config.runtime.events_rate_cap,
-        );
+
+    // Handle replay mode vs normal mode
+    if let Some(replay_path) = args.replay.clone() {
+        if args.record.is_some() {
+            return Err("Cannot use --record and --replay simultaneously".into());
+        }
+
+        info!("[cognitod] Starting replay mode");
+
+        // Start replay listener instead of perf listener
+        let context_clone = Arc::clone(&context);
+        let metrics_clone = Arc::clone(&metrics);
+        let handlers_clone = Arc::clone(&handlers);
+        let replay_speed = args.replay_speed;
+
+        tokio::spawn(async move {
+            if let Err(e) = start_replay_listener(
+                replay_path,
+                context_clone,
+                metrics_clone,
+                handlers_clone,
+                replay_speed,
+            )
+            .await
+            {
+                log::error!("[replay] Failed: {}", e);
+            }
+        });
+    } else {
+        // Normal eBPF mode - start perf listener
+        if !perf_buffers.is_empty() {
+            start_perf_listener(
+                perf_buffers,
+                Arc::clone(&context),
+                Arc::clone(&metrics),
+                Arc::clone(&handlers),
+                Arc::clone(&offline_guard),
+                config.runtime.events_rate_cap,
+            );
+        }
     }
 
     // 🔁 Periodically refresh system snapshot (conditional on activity)
