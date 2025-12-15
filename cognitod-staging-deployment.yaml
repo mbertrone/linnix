@@ -44,7 +44,6 @@ metadata:
   namespace: datadog-agent
   labels:
     app: cognitod
-    environment: staging
 data:
   linnix.toml: |
     [api]
@@ -81,7 +80,6 @@ metadata:
   namespace: datadog-agent
   labels:
     app: cognitod
-    environment: staging
 spec:
   selector:
     matchLabels:
@@ -90,13 +88,13 @@ spec:
     metadata:
       labels:
         app: cognitod
-        environment: staging
     spec:
       # serviceAccountName: cognitod-sa  # Commented out - not using RBAC
       hostPID: true
       hostNetwork: false
       nodeSelector:
         kubernetes.io/arch: amd64
+        kubernetes.io/hostname: ip-10-128-101-68.ec2.internal
       tolerations:
         - operator: Exists
           effect: NoSchedule
