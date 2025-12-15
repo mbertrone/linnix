@@ -102,7 +102,7 @@ spec:
           effect: NoSchedule
       containers:
         - name: cognitod
-          image: ghcr.io/linnix-os/cognitod:latest
+          image: registry.ddbuild.io/cognitod:v0.2.0
           imagePullPolicy: Always
           securityContext:
             capabilities:
