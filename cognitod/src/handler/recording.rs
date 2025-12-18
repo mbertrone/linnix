@@ -1,4 +1,4 @@
-use crate::{ProcessEvent, types::SystemSnapshot, handler::Handler};
+use crate::{ProcessEvent, types::{SystemSnapshot, EnhancedSystemSnapshot, ProcessSnapshotEntry}, handler::Handler};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -64,8 +64,8 @@ impl RecordingHandler {
         self.snapshots_recorded.load(Ordering::Relaxed)
     }
 
-    // V2: Record system snapshot in unified format
-    async fn record_system_snapshot(&self, snapshot: &SystemSnapshot) -> anyhow::Result<()> {
+    // V2: Record enhanced system snapshot in unified format
+    pub async fn record_enhanced_snapshot(&self, enhanced_snapshot: &EnhancedSystemSnapshot) -> anyhow::Result<()> {
         let timestamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
@@ -74,7 +74,7 @@ impl RecordingHandler {
         let entry = RecordingEntry {
             entry_type: "system_snapshot".to_string(),
             timestamp,
-            data: serde_json::to_value(snapshot)?,
+            data: serde_json::to_value(enhanced_snapshot)?,
         };
 
         let line = serde_json::to_string(&entry)?;
@@ -88,6 +88,13 @@ impl RecordingHandler {
         }
 
         Ok(())
+    }
+
+    // V2: Record system snapshot in unified format (backward compatibility)
+    async fn record_system_snapshot(&self, snapshot: &SystemSnapshot) -> anyhow::Result<()> {
+        // Convert to enhanced snapshot without process data for backward compatibility
+        let enhanced = EnhancedSystemSnapshot::from(snapshot.clone());
+        self.record_enhanced_snapshot(&enhanced).await
     }
 }
 
