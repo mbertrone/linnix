@@ -1,4 +1,4 @@
-use crate::{ProcessEvent, types::{SystemSnapshot, EnhancedSystemSnapshot, ProcessSnapshotEntry}, handler::Handler};
+use crate::{ProcessEvent, types::{SystemSnapshot, EnhancedSystemSnapshot}, handler::Handler};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
