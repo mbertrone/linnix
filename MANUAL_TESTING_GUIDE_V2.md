@@ -10,9 +10,10 @@
 3. [Quick Start: Example Testing](#quick-start-example-testing)
 4. [Full Integration Testing](#full-integration-testing)
 5. [Advanced Testing Scenarios](#advanced-testing-scenarios)
-6. [Validation Checklist](#validation-checklist)
-7. [Troubleshooting](#troubleshooting)
-8. [Understanding the Output](#understanding-the-output)
+6. [Replay Testing](#replay-testing)
+7. [Validation Checklist](#validation-checklist)
+8. [Troubleshooting](#troubleshooting)
+9. [Understanding the Output](#understanding-the-output)
 
 ---
 
@@ -442,6 +443,269 @@ cat /tmp/linnix_test_recording_v2.jsonl | \
 - RSS values present in every snapshot
 - RSS increases over time (showing memory growth)
 - No gaps in RSS tracking
+
+---
+
+## Replay Testing
+
+Test the replay functionality to verify that recorded events can be replayed and that alerts are triggered correctly during replay.
+
+### Overview
+
+The replay feature allows you to:
+- Replay recorded process events and system snapshots
+- Test rule configurations against historical data
+- Verify alerts are triggered consistently
+- Debug incidents by replaying specific scenarios
+- Compare live vs replay alert output
+
+### Step 1: Create a V2 Recording
+
+First, create a V2 recording with some activity:
+
+```bash
+# Navigate to project root
+cd /home/ubuntu/linnix
+
+# Remove old recording
+sudo rm -f /tmp/linnix_test_recording_v2.jsonl
+
+# Start recording (will run in foreground)
+sudo ./target/release/cognitod --config cognitod/test-config-v2.toml
+```
+
+### Step 2: Generate Activity to Trigger Alerts
+
+In another terminal, generate some activity that should trigger your rules:
+
+```bash
+# Example 1: Fork activity (may trigger fork_storm rule)
+for i in {1..50}; do
+  sleep 0.1 &
+done
+
+# Example 2: Short-lived processes
+for i in {1..30}; do
+  bash -c "echo test > /dev/null" &
+done
+
+# Example 3: CPU-intensive task (if stress-ng is available)
+stress-ng --cpu 2 --timeout 10s
+
+# Wait for snapshots to be captured
+sleep 15
+```
+
+### Step 3: Stop Recording
+
+```bash
+# Stop cognitod (Ctrl+C in the recording terminal)
+# Or if running in background:
+sudo pkill cognitod
+
+# Wait for graceful shutdown
+sleep 2
+```
+
+### Step 4: Verify Recording File
+
+```bash
+# Check file exists and has content
+ls -lh /tmp/linnix_test_recording_v2.jsonl
+
+# Count entries by type
+cat /tmp/linnix_test_recording_v2.jsonl | jq -r '.type' | sort | uniq -c
+
+# Expected output:
+#    XXX process_event
+#      Y system_snapshot
+```
+
+**Expected:**
+- File size: 10KB - 1MB depending on activity
+- Multiple process_event entries
+- Multiple system_snapshot entries (at least 2-3 for 15+ seconds)
+
+### Step 5: Clear Existing Alerts
+
+Before replay, clear any existing alerts to ensure clean comparison:
+
+```bash
+# Backup existing alerts if needed
+sudo cp /var/log/linnix/alerts.ndjson /tmp/alerts_live.ndjson
+
+# Clear alerts file
+sudo rm -f /var/log/linnix/alerts.ndjson
+sudo touch /var/log/linnix/alerts.ndjson
+```
+
+### Step 6: Replay the Recording
+
+```bash
+# Replay at real-time speed (1.0x)
+sudo ./target/release/cognitod \
+  --config cognitod/test-config-v2.toml \
+  --replay /tmp/linnix_test_recording_v2.jsonl \
+  --replay-speed 1.0
+```
+
+**Alternative replay speeds:**
+```bash
+# Fast replay (10x speed)
+--replay-speed 10.0
+
+# Very fast (100x speed)
+--replay-speed 100.0
+
+# Slow motion (0.5x speed)
+--replay-speed 0.5
+```
+
+**Expected log output:**
+```
+[cognitod] Starting Cognition Daemon...
+[cognitod] Replay mode enabled, skipping eBPF initialization
+[replay] Starting replay from /tmp/linnix_test_recording_v2.jsonl
+[replay] Detected V2 format
+[replay] Processed 1000 entries (994 events, 6 snapshots)
+[replay] Completed: 548 entries replayed (545 events, 3 snapshots)
+```
+
+### Step 7: Verify Alerts Were Triggered
+
+```bash
+# View all alerts generated during replay
+sudo cat /var/log/linnix/alerts.ndjson | jq '.'
+
+# Count alerts by rule name
+sudo cat /var/log/linnix/alerts.ndjson | jq -r '.rule' | sort | uniq -c
+
+# Example output:
+#      2 fork_storm
+#      1 cpu_spin
+
+# View specific rule alerts
+sudo cat /var/log/linnix/alerts.ndjson | jq 'select(.rule=="fork_storm")'
+```
+
+### Step 8: Compare Live vs Replay Alerts
+
+```bash
+# If you saved live alerts earlier, compare them
+diff <(cat /tmp/alerts_live.ndjson | jq -S 'del(.timestamp)' | sort) \
+     <(sudo cat /var/log/linnix/alerts.ndjson | jq -S 'del(.timestamp)' | sort)
+```
+
+**Expected:**
+- Same alerts triggered during replay as during live recording
+- Alert rule names, PIDs, and reasons should match
+- Timestamps may differ (expected)
+
+### Step 9: Test Format Detection (V1 vs V2)
+
+The replay system automatically detects recording format:
+
+```bash
+# V2 format detection (unified with type field)
+sudo ./target/release/cognitod \
+  --config cognitod/test-config-v2.toml \
+  --replay /tmp/linnix_test_recording_v2.jsonl \
+  --replay-speed 10.0 2>&1 | grep "Detected"
+
+# Expected: [replay] Detected V2 format
+```
+
+### Step 10: Test Replay with Different Speeds
+
+```bash
+# Measure replay time at different speeds
+echo "Testing 1x speed..."
+time sudo ./target/release/cognitod \
+  --config cognitod/test-config-v2.toml \
+  --replay /tmp/linnix_test_recording_v2.jsonl \
+  --replay-speed 1.0 &
+sleep 5
+sudo pkill cognitod
+
+echo "Testing 10x speed..."
+time sudo ./target/release/cognitod \
+  --config cognitod/test-config-v2.toml \
+  --replay /tmp/linnix_test_recording_v2.jsonl \
+  --replay-speed 10.0 &
+sleep 2
+sudo pkill cognitod
+```
+
+**Expected:**
+- 10x speed should complete approximately 10x faster
+- All events still processed
+- Alerts still triggered correctly
+
+### Verification Points
+
+- ✅ Recording file created with V2 format
+- ✅ Replay detects V2 format automatically
+- ✅ Progress logs show both events and snapshots being processed
+- ✅ Replay completes successfully with summary
+- ✅ Alerts are generated during replay
+- ✅ Same alerts triggered as during live recording
+- ✅ Replay speed multiplier works correctly
+- ✅ System snapshots trigger `on_snapshot` handlers
+- ✅ Process events trigger `on_event` handlers
+
+### Common Use Cases
+
+**1. Debug a specific rule:**
+```bash
+# Record an incident, then replay with debug logging
+sudo RUST_LOG=debug ./target/release/cognitod \
+  --config cognitod/test-config-v2.toml \
+  --replay /tmp/incident_recording.jsonl
+```
+
+**2. Test rule changes:**
+```bash
+# Modify rules in test-rules-v2.yaml
+# Replay to see if new rules trigger correctly
+sudo ./target/release/cognitod \
+  --config cognitod/test-config-v2.toml \
+  --replay /tmp/linnix_test_recording_v2.jsonl \
+  --replay-speed 100.0
+```
+
+**3. Regression testing:**
+```bash
+# Keep historical recordings
+# Replay them after code changes to ensure consistency
+for recording in recordings/*.jsonl; do
+  echo "Testing $recording"
+  sudo ./target/release/cognitod \
+    --config cognitod/test-config-v2.toml \
+    --replay "$recording" \
+    --replay-speed 100.0
+  # Check alerts generated
+  sudo cat /var/log/linnix/alerts.ndjson | jq -r '.rule' | sort | uniq -c
+  sudo rm -f /var/log/linnix/alerts.ndjson
+done
+```
+
+### Troubleshooting Replay
+
+**Issue: "Failed to parse line" errors**
+- **Cause:** Corrupted recording file or format mismatch
+- **Solution:** Verify JSON is valid: `cat recording.jsonl | jq . > /dev/null`
+
+**Issue: No alerts generated during replay**
+- **Cause:** Rules not loaded or not matching replayed data
+- **Solution:** Check rules are enabled in config, verify rules syntax
+
+**Issue: Replay too slow**
+- **Cause:** Default 1.0x speed matches original timing
+- **Solution:** Use `--replay-speed 10.0` or higher for faster replay
+
+**Issue: "Detected V1 format" but file is V2**
+- **Cause:** File doesn't have `"type"` field in entries
+- **Solution:** Verify recording was created with `v2_format = true` in config
 
 ---
 
