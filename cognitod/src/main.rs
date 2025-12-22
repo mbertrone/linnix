@@ -405,8 +405,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     ensure_environment()?;
 
-    // Load configuration
-    let config = Config::load();
+    // Load configuration from specified path
+    let config = Config::load_from(&args.config);
     let offline_guard = Arc::new(OfflineGuard::new(config.runtime.offline));
 
     // Initialize metrics and spawn background reporting tasks
@@ -630,7 +630,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // Handlers specified on the command line
     let mut handler_list = HandlerList::new();
 
-    // Initialize recording handler if requested
+    // Initialize recording handler if requested via CLI
+    let mut recording_enabled = false;
     if let Some(record_path) = &args.record {
         if args.replay.is_some() {
             return Err("Cannot use --record and --replay simultaneously".into());
@@ -640,9 +641,34 @@ async fn main() -> Result<(), Box<dyn Error>> {
             Ok(recording_handler) => {
                 info!("[cognitod] Recording eBPF events to {}", record_path.display());
                 handler_list.register(recording_handler);
+                recording_enabled = true;
             }
             Err(e) => {
                 return Err(format!("Failed to initialize recording: {}", e).into());
+            }
+        }
+    }
+
+    // Initialize recording handler from config if not already enabled via CLI
+    if !recording_enabled && config.recording.enabled {
+        let record_path = PathBuf::from(&config.recording.file_path);
+        let v2_format = config.recording.v2_format;
+
+        match RecordingHandler::new_with_options(record_path.clone(), v2_format).await {
+            Ok(recording_handler) => {
+                info!("[cognitod] Recording enabled: {}", record_path.display());
+                info!("[cognitod] Using V2 format: {}", v2_format);
+                if config.recording.snapshots_enabled {
+                    info!(
+                        "[cognitod] Snapshots enabled: interval={}ms",
+                        config.recording.snapshot_interval_ms
+                    );
+                }
+                handler_list.register(recording_handler);
+                recording_enabled = true;
+            }
+            Err(e) => {
+                warn!("[cognitod] Failed to initialize recording from config: {}", e);
             }
         }
     }
@@ -906,22 +932,25 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let ctx_clone = Arc::clone(&context);
     let handlers_clone = Arc::clone(&handlers);
     let metrics_clone = Arc::clone(&metrics);
-    // let reasoner_cfg = config.reasoner.clone(); // Unused
+    let activity_threshold = config.recording.activity_threshold;
+    let snapshot_interval_ms = config.recording.snapshot_interval_ms;
+    let snapshots_enabled = config.recording.snapshots_enabled;
     tokio::spawn(async move {
         loop {
-            // Only update when system is active (events/sec >= reasoner threshold)
+            // Only update when system is active (events/sec >= activity threshold)
+            // activity_threshold = 0 means always capture snapshots
             let eps = metrics_clone.events_per_sec();
-            let is_active = eps >= 20; // Hardcoded default (YAGNI cleanup)
+            let is_active = activity_threshold == 0 || eps >= activity_threshold;
 
             // Always update system snapshot for dashboard
             ctx_clone.update_system_snapshot();
 
-            if is_active {
+            if is_active && snapshots_enabled {
                 let snap = ctx_clone.get_system_snapshot();
                 handlers_clone.on_snapshot(&snap).await;
             }
 
-            sleep(Duration::from_secs(5)).await;
+            sleep(Duration::from_millis(snapshot_interval_ms)).await;
         }
     });
 

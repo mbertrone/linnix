@@ -22,6 +22,7 @@ enabled = false  # Disabled for testing to avoid killing processes
 
 [rules]
 enabled = true
+path = "/home/ubuntu/linnix/cognitod/test-rules-v2.yaml"
 
 [llm]
 enabled = false  # Disabled for local testing

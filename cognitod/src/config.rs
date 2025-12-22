@@ -206,7 +206,13 @@ impl Config {
         let path =
             std::env::var(ENV_CONFIG_PATH).unwrap_or_else(|_| DEFAULT_CONFIG_PATH.to_string());
         let path = PathBuf::from(path);
-        match fs::read_to_string(&path) {
+        Self::load_from(&path)
+    }
+
+    /// Load configuration from a specific file path. If the file
+    /// is missing or fails to parse, defaults are returned.
+    pub fn load_from(path: &PathBuf) -> Self {
+        match fs::read_to_string(path) {
             Ok(contents) => match toml::from_str(&contents) {
                 Ok(config) => config,
                 Err(e) => {
@@ -218,7 +224,14 @@ impl Config {
                     Config::default()
                 }
             },
-            Err(_) => Config::default(),
+            Err(e) => {
+                log::warn!(
+                    "Failed to read config file at {}: {}. Using defaults.",
+                    path.display(),
+                    e
+                );
+                Config::default()
+            }
         }
     }
 }

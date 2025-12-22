@@ -158,15 +158,17 @@ Check that these settings are present:
 - `recording.snapshots_enabled = true`
 - `recording.snapshot_interval_ms = 5000` (5 seconds)
 - `recording.activity_threshold = 0` (always update RSS)
+- `rules.enabled = true`
+- `rules.path = "cognitod/test-rules-v2.yaml"` (rules file location)
 
 ### Step 2: Start cognitod with V2 Configuration
 
 ```bash
 # Option A: Run in foreground (recommended for testing)
-sudo RUST_LOG=info ./target/release/cognitod --config cognitod/test-config-v2.toml --rules cognitod/test-rules-v2.yaml
+sudo RUST_LOG=info ./target/release/cognitod --config cognitod/test-config-v2.toml
 
 # Option B: Run in background
-sudo RUST_LOG=info ./target/release/cognitod --config cognitod/test-config-v2.toml --rules cognitod/test-rules-v2.yaml &
+sudo RUST_LOG=info ./target/release/cognitod --config cognitod/test-config-v2.toml &
 COGNITOD_PID=$!
 ```
 
@@ -282,8 +284,7 @@ Test recording over an extended period to validate:
 ```bash
 # Start recording
 sudo RUST_LOG=info ./target/release/cognitod \
-  --config cognitod/test-config-v2.toml \
-  --rules cognitod/test-rules-v2.yaml &
+  --config cognitod/test-config-v2.toml &
 COGNITOD_PID=$!
 
 # Monitor for 5 minutes
@@ -322,8 +323,7 @@ chmod +x /tmp/fork_test.sh
 
 # Start recording
 sudo RUST_LOG=info ./target/release/cognitod \
-  --config cognitod/test-config-v2.toml \
-  --rules cognitod/test-rules-v2.yaml &
+  --config cognitod/test-config-v2.toml &
 COGNITOD_PID=$!
 
 # Run fork test
@@ -368,6 +368,10 @@ activity_threshold = 0
 enabled = false
 
 [rules]
+enabled = false
+path = ""  # No rules file needed for this test
+
+[api]
 enabled = false
 
 [llm]
@@ -416,8 +420,7 @@ PYTHON_PID=$!
 
 # Start recording
 sudo RUST_LOG=info ./target/release/cognitod \
-  --config cognitod/test-config-v2.toml \
-  --rules cognitod/test-rules-v2.yaml &
+  --config cognitod/test-config-v2.toml &
 COGNITOD_PID=$!
 
 # Wait for recording
