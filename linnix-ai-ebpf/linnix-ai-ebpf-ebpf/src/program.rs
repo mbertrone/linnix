@@ -352,7 +352,6 @@ pub fn linnix_ai_ebpf(ctx: TracePointContext) -> u32 {
 }
 
 fn try_handle_exec(ctx: TracePointContext) -> u32 {
-    info!(&ctx, "process exec");
     let now = unsafe { bpf_ktime_get_ns() };
     let pid = ctx.pid();
     if pid == 0 {
