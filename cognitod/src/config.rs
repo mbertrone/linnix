@@ -284,6 +284,11 @@ pub struct LoggingConfig {
     pub insights_file: String,
     #[serde(default)]
     pub incident_context_file: Option<String>,
+    /// Enable verbose event logging (Fork/Exec/Exit events)
+    /// When disabled, these events are logged at TRACE level (filtered by default)
+    /// When enabled, these events are logged at DEBUG level
+    #[serde(default = "default_log_events")]
+    pub log_events: bool,
 }
 
 impl Default for LoggingConfig {
@@ -293,6 +298,7 @@ impl Default for LoggingConfig {
             journald: default_journald(),
             insights_file: default_insights_file(),
             incident_context_file: None,
+            log_events: default_log_events(),
         }
     }
 }
@@ -305,6 +311,9 @@ fn default_journald() -> bool {
 }
 fn default_insights_file() -> String {
     "/var/log/linnix/insights.ndjson".to_string()
+}
+fn default_log_events() -> bool {
+    false // Disabled by default to reduce log verbosity
 }
 
 #[derive(Debug, Deserialize, Clone)]

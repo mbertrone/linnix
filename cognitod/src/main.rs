@@ -924,6 +924,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 Arc::clone(&handlers),
                 Arc::clone(&offline_guard),
                 config.runtime.events_rate_cap,
+                config.logging.log_events,
             );
         }
     }
