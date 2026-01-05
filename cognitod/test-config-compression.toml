@@ -1,0 +1,27 @@
+[runtime]
+offline = true
+
+[recording]
+enabled = true
+file_path = "/tmp/linnix_test_compression.jsonl"
+v2_format = true
+snapshots_enabled = true
+snapshot_interval_ms = 5000
+process_snapshot_limit = 50
+process_cpu_threshold = 1.0
+compress_output = true  # Enable compression!
+activity_threshold = 0
+
+[logging]
+log_events = false
+alerts_file = "/var/log/linnix/alerts.ndjson"
+insights_file = "/var/log/linnix/insights.ndjson"
+
+[rules]
+path = "/etc/linnix/rules.toml"
+
+[api]
+listen_addr = "127.0.0.1:3000"
+
+[circuit_breaker]
+enabled = false

@@ -1,6 +1,20 @@
 use serde::{Deserialize, Serialize};
 use std::io::BufRead;
 use std::path::Path;
+use flate2::read::GzDecoder;
+
+/// Compression type detection
+enum CompressionType {
+    None,
+    Gzip,
+}
+
+fn detect_compression(path: &Path) -> CompressionType {
+    match path.extension().and_then(|s| s.to_str()) {
+        Some("gz") => CompressionType::Gzip,
+        _ => CompressionType::None,
+    }
+}
 
 /// Simple replay engine that operates ONLY on recorded data
 /// CRITICAL: No live system access allowed during replay
@@ -20,10 +34,23 @@ pub struct ReplayEntry {
 
 impl SimpleReplayEngine {
     /// Load a recording file for replay - ONLY reads from file, no system access
+    /// Automatically detects and decompresses gzip files based on .gz extension
     pub fn load_recording<P: AsRef<Path>>(path: P) -> anyhow::Result<Self> {
+        let path = path.as_ref();
         let file = std::fs::File::open(path)?;
-        let reader = std::io::BufReader::new(file);
-        
+
+        // Detect compression and create appropriate reader
+        let reader: Box<dyn BufRead> = match detect_compression(path) {
+            CompressionType::Gzip => {
+                log::info!("[replay] Detected gzip compression, decompressing...");
+                let decoder = GzDecoder::new(file);
+                Box::new(std::io::BufReader::new(decoder))
+            }
+            CompressionType::None => {
+                Box::new(std::io::BufReader::new(file))
+            }
+        };
+
         let mut entries = Vec::new();
         for line_result in reader.lines() {
             let line = line_result?;

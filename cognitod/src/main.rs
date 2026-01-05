@@ -632,6 +632,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     // Initialize recording handler if requested via CLI
     let mut recording_enabled = false;
+    let mut recording_handler_for_shutdown: Option<Arc<RecordingHandler>> = None;
     if let Some(record_path) = &args.record {
         if args.replay.is_some() {
             return Err("Cannot use --record and --replay simultaneously".into());
@@ -653,19 +654,22 @@ async fn main() -> Result<(), Box<dyn Error>> {
     if !recording_enabled && config.recording.enabled {
         let record_path = PathBuf::from(&config.recording.file_path);
         let v2_format = config.recording.v2_format;
+        let compress_output = config.recording.compress_output;
 
-        match RecordingHandler::new_with_options(record_path.clone(), v2_format).await {
+        match RecordingHandler::new_with_options(record_path.clone(), v2_format, compress_output).await {
             Ok(recording_handler) => {
                 info!("[cognitod] Recording enabled: {}", record_path.display());
                 info!("[cognitod] Using V2 format: {}", v2_format);
+                info!("[cognitod] Compression: {}", if compress_output { "enabled" } else { "disabled" });
                 if config.recording.snapshots_enabled {
                     info!(
                         "[cognitod] Snapshots enabled: interval={}ms",
                         config.recording.snapshot_interval_ms
                     );
                 }
-                handler_list.register(recording_handler);
-                recording_enabled = true;
+                let handler_arc = Arc::new(recording_handler);
+                recording_handler_for_shutdown = Some(handler_arc.clone());
+                handler_list.register_arc(handler_arc);
             }
             Err(e) => {
                 warn!("[cognitod] Failed to initialize recording from config: {}", e);
@@ -1257,20 +1261,35 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
     });
 
-    tokio::spawn(async {
+    // Clone recording handler for SIGTERM handler
+    let recording_handler_sigterm = recording_handler_for_shutdown.clone();
+    tokio::spawn(async move {
         let mut sigterm = signal(SignalKind::terminate()).unwrap();
         sigterm.recv().await;
         println!("[cognitod] SIGTERM received, shutting down...");
+
+        // Gracefully shutdown recording handler
+        if let Some(handler) = recording_handler_sigterm {
+            if let Err(e) = handler.shutdown().await {
+                eprintln!("[cognitod] Error shutting down recording: {}", e);
+            }
+        }
+
         std::process::exit(0);
     });
 
     println!("[cognitod] Running. Press Ctrl+C to exit.");
     tokio::signal::ctrl_c().await?;
     println!("[cognitod] Shutting down...");
+
     // Try graceful shutdown for 3 seconds
     if timeout(std::time::Duration::from_secs(3), async {
-        // Place any graceful shutdown logic here if needed
-        // e.g., notify background tasks to stop, flush logs, etc.
+        // Gracefully shutdown recording handler
+        if let Some(handler) = recording_handler_for_shutdown {
+            if let Err(e) = handler.shutdown().await {
+                eprintln!("[cognitod] Error shutting down recording: {}", e);
+            }
+        }
     })
     .await
     .is_err()

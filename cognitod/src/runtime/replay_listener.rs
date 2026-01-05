@@ -2,8 +2,9 @@ use crate::{ProcessEvent, handler::HandlerList, context::ContextStore, metrics::
 use anyhow::Result;
 use log::info;
 use serde::{Deserialize, Serialize};
-use std::{path::PathBuf, sync::Arc, time::Duration};
+use std::{path::{Path, PathBuf}, sync::Arc, time::Duration};
 use tokio::{fs::File, io::{AsyncBufReadExt, BufReader}, time::sleep};
+use async_compression::tokio::bufread::GzipDecoder as AsyncGzipDecoder;
 
 // V1 format: Legacy process events only
 #[derive(Serialize, Deserialize)]
@@ -26,6 +27,42 @@ enum ReplayEntry {
     SystemSnapshot { timestamp: u64, snapshot: SystemSnapshot },
 }
 
+/// Detect compression type from file extension
+fn detect_compression(path: &Path) -> bool {
+    path.extension()
+        .and_then(|s| s.to_str())
+        .map(|ext| ext == "gz")
+        .unwrap_or(false)
+}
+
+/// Replay reader that can handle both compressed and uncompressed files
+enum ReplayReader {
+    Uncompressed(tokio::io::Lines<BufReader<File>>),
+    Gzip(tokio::io::Lines<BufReader<AsyncGzipDecoder<BufReader<File>>>>),
+}
+
+impl ReplayReader {
+    async fn next_line(&mut self) -> Result<Option<String>> {
+        match self {
+            ReplayReader::Uncompressed(lines) => Ok(lines.next_line().await?),
+            ReplayReader::Gzip(lines) => Ok(lines.next_line().await?),
+        }
+    }
+}
+
+/// Open replay file with automatic decompression support
+async fn open_replay_file(path: &Path) -> Result<ReplayReader> {
+    let file = File::open(path).await?;
+
+    if detect_compression(path) {
+        info!("[replay] Detected gzip compression, decompressing...");
+        let decoder = AsyncGzipDecoder::new(BufReader::new(file));
+        Ok(ReplayReader::Gzip(BufReader::new(decoder).lines()))
+    } else {
+        Ok(ReplayReader::Uncompressed(BufReader::new(file).lines()))
+    }
+}
+
 pub async fn start_replay_listener(
     replay_file: PathBuf,
     context: Arc<ContextStore>,
@@ -35,9 +72,7 @@ pub async fn start_replay_listener(
 ) -> Result<()> {
     info!("[replay] Starting replay from {}", replay_file.display());
 
-    let file = File::open(&replay_file).await?;
-    let reader = BufReader::new(file);
-    let mut lines = reader.lines();
+    let mut reader = open_replay_file(&replay_file).await?;
 
     let mut entries_replayed = 0u64;
     let mut process_events = 0u64;
@@ -45,7 +80,7 @@ pub async fn start_replay_listener(
     let mut last_timestamp: Option<u64> = None;
     let mut detected_format: Option<String> = None;
 
-    while let Some(line) = lines.next_line().await? {
+    while let Some(line) = reader.next_line().await? {
         // Try to parse as V2 first, then fall back to V1
         let entry = match parse_entry(&line) {
             Ok(e) => {

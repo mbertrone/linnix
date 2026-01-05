@@ -39,6 +39,11 @@ impl HandlerList {
         self.handlers.push(Arc::new(handler));
     }
 
+    /// Register a handler that's already wrapped in Arc (useful when you need to keep a reference)
+    pub fn register_arc<H: Handler + 'static>(&mut self, handler: Arc<H>) {
+        self.handlers.push(handler);
+    }
+
     pub async fn on_event(&self, event: &ProcessEvent) {
         for h in &self.handlers {
             h.on_event(event).await;
