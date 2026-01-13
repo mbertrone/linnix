@@ -70,36 +70,80 @@ data:
     level = "info"
     format = "json"
   rules.yaml: |
-    # Demo rules optimized for scenario detection
-    # Using actual supported detectors
-
-    - name: fork_storm_demo
+    # Production rules for high-activity staging nodes
+    # Baseline observed: ~70 forks/sec, 350 forks/5s
+    
+    # Rule 1: Sustained high fork rate (actual fork bomb pattern)
+    - name: fork_storm_sustained
       detector: forks_per_sec
-      threshold: 10  # forks per second
-      duration: 2    # seconds
+      threshold: 200            # ~3x your baseline (70 forks/sec)
+      duration: 10              # Must sustain for 10 seconds (not brief spike)
       severity: high
-      cooldown: 30
-
-    - name: fork_burst_demo
+      cooldown: 120
+    
+    # Rule 2: Extreme fork burst (emergency detection)
+    - name: fork_burst_extreme
       detector: fork_burst
-      threshold: 30  # total forks
+      threshold: 1000           # ~3x your 5-sec baseline (346)
       window_seconds: 5
-      severity: medium
-      cooldown: 30
-
-    - name: memory_leak_demo
-      detector: subtree_rss_mb
-      threshold: 50   # MB total RSS (lower to ensure quick detection)
-      duration: 2     # seconds
+      severity: critical
+      cooldown: 60
+    
+    # Rule 3: Runaway single process (actual fork bomb signature)
+    - name: runaway_process_tree
+      detector: runaway_tree
+      threshold: 100            # Single parent spawns 100+ children
+      window_seconds: 10        # Within 10 seconds
+      severity: critical
+      cooldown: 90
+    
+    # Rule 4: Short-lived process flood (crash loop detection)
+    - name: crash_loop_detection
+      detector: short_job_flood
+      threshold: 100            # 100 processes
+      window_seconds: 30        # Within 30 seconds
+      max_exec_duration_ms: 500 # Living less than 500ms
       severity: high
-      cooldown: 30
+      cooldown: 120
 
-    - name: cpu_spike_demo
-      detector: subtree_cpu_pct
-      threshold: 50  # percent CPU
-      duration: 5    # seconds
-      severity: medium
-      cooldown: 30
+
+#    # Demo rules optimized for scenario detection
+#    # Using actual supported detectors
+#
+#    - name: fork_storm_demo
+#      detector: forks_per_sec
+#      threshold: 10  # forks per second
+#      duration: 2    # seconds
+#      severity: high
+#      cooldown: 30
+#
+#    - name: fork_burst_demo
+#      detector: fork_burst
+#      threshold: 30  # total forks
+#      window_seconds: 5
+#      severity: medium
+#      cooldown: 30
+#
+#    - name: memory_leak_demo
+#      detector: subtree_rss_mb
+#      threshold: 50   # MB total RSS (lower to ensure quick detection)
+#      duration: 2     # seconds
+#      severity: high
+#      cooldown: 30
+#
+#    - name: cpu_spike_demo
+#      detector: subtree_cpu_pct
+#      threshold: 50  # percent CPU
+#      duration: 5    # seconds
+#      severity: medium
+#      cooldown: 30
+#
+#    - name: runaway_process_tree
+#      detector: runaway_tree
+#      threshold: 100            # Single parent spawns 100+ children
+#      window_seconds: 10        # Within 10 seconds
+#      severity: critical
+#      cooldown: 90
 ---
 apiVersion: v1
 kind: Pod
@@ -108,19 +152,21 @@ metadata:
   namespace: datadog-agent
   labels:
     app: cognitod
+  annotations:
+    ad.datadoghq.com/main.logs: '[{"service": "cognitod", "source": "rust"}]'
 spec:
   # serviceAccountName: cognitod-sa  # Commented out - not using RBAC
   hostPID: true
   hostNetwork: false
   nodeSelector:
     kubernetes.io/arch: amd64
-    kubernetes.io/hostname: ip-10-128-101-68.ec2.internal
+#    kubernetes.io/hostname: ip-xx-xx-xx-xxx.ec2.internal
   tolerations:
     - operator: Exists
       effect: NoSchedule
   containers:
     - name: cognitod
-      image: registry.ddbuild.io/cognitod:v0.2.0
+      image: registry.ddbuild.io/cognitod:v0.2.3
       imagePullPolicy: Always
       securityContext:
         privileged: true
@@ -130,7 +176,11 @@ spec:
             fieldRef:
               fieldPath: spec.nodeName
         - name: RUST_LOG
-          value: "info"
+          value: "off,cognitod::alerts=info"
+#        - name: RUST_LOG_STYLE
+#          value: "never"
+#        - name: RUST_LOG_FORMAT
+#          value: "json"
       volumeMounts:
         - name: config
           mountPath: /etc/linnix
