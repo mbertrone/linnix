@@ -1,5 +1,6 @@
 #[cfg(test)]
 use crate::ProcessEventWire;
+use crate::context::ContextStore;
 use crate::handler::Handler;
 use crate::metrics::Metrics;
 use crate::{ProcessEvent, types::SystemSnapshot};
@@ -61,6 +62,12 @@ pub struct Alert {
     pub severity: Severity,
     pub message: String,
     pub host: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub psi_cpu: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub psi_memory: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub psi_io: Option<f32>,
 }
 
 impl Alert {
@@ -301,6 +308,7 @@ pub struct RuleEngine {
     runaway_window_secs: u64,
     metrics: Arc<Metrics>,
     total_memory_bytes: Option<u64>,
+    context: Arc<ContextStore>,
 }
 
 impl RuleEngine {
@@ -309,6 +317,7 @@ impl RuleEngine {
         alerts_file: String,
         journald: bool,
         metrics: Arc<Metrics>,
+        context: Arc<ContextStore>,
     ) -> anyhow::Result<Self> {
         let text = std::fs::read_to_string(path)?;
         let hint = Path::new(path).extension().and_then(|ext| ext.to_str());
@@ -382,6 +391,7 @@ impl RuleEngine {
             runaway_window_secs,
             metrics,
             total_memory_bytes,
+            context,
         })
     }
 
@@ -391,6 +401,21 @@ impl RuleEngine {
 
     pub fn rule_count(&self) -> usize {
         self.rules.len()
+    }
+
+    fn get_process_name(&self, pid: u32) -> String {
+        self.context
+            .get_process_by_pid(pid)
+            .map(|event| {
+                let nul = event.comm.iter().position(|b| *b == 0).unwrap_or(16);
+                let name = String::from_utf8_lossy(&event.comm[..nul]).trim().to_string();
+                if name.is_empty() {
+                    "unknown".to_string()
+                } else {
+                    name
+                }
+            })
+            .unwrap_or_else(|| "unknown".to_string())
     }
 
     async fn emit_alert(&self, rule: &RuleConfig, message: String) {
@@ -410,17 +435,23 @@ impl RuleEngine {
         state.active.insert(key.clone(), now + cooldown);
         drop(state);
 
+        let snapshot = self.context.get_system_snapshot();
         let alert = Alert {
             rule: rule.name.clone(),
             severity: rule.severity.clone(),
             message,
             host: self.host.clone(),
+            psi_cpu: Some(snapshot.psi_cpu_some_avg10),
+            psi_memory: Some(snapshot.psi_memory_some_avg10),
+            psi_io: Some(snapshot.psi_io_some_avg10),
         };
 
         log::info!(
-            "[rules] emitting alert rule={} severity={} message={}",
+            "[rules] emitting alert rule={} severity={} psi_cpu={:.1} psi_mem={:.1} message={}",
             alert.rule,
             alert.severity.as_str(),
+            alert.psi_cpu.unwrap_or(0.0),
+            alert.psi_memory.unwrap_or(0.0),
             alert.message
         );
 
@@ -672,10 +703,32 @@ impl Handler for RuleEngine {
                             );
                         }
                         if count >= *threshold {
+                            // Find top forking parent
+                            let top_forker = state
+                                .forks_by_ppid
+                                .iter()
+                                .map(|(ppid, queue)| {
+                                    let recent = queue
+                                        .iter()
+                                        .rev()
+                                        .take_while(|ts| now.duration_since(**ts) <= window)
+                                        .count();
+                                    (*ppid, recent)
+                                })
+                                .max_by_key(|(_, count)| *count)
+                                .map(|(ppid, _)| ppid);
+
+                            let proc_info = top_forker
+                                .map(|ppid| {
+                                    let name = self.get_process_name(ppid);
+                                    format!(" (top: {} ppid {})", name, ppid)
+                                })
+                                .unwrap_or_default();
+
                             drop(state);
                             self.emit_alert(
                                 &rule.cfg,
-                                format!("fork burst: {} forks in {}s", count, window_seconds),
+                                format!("fork burst: {} forks in {}s{}", count, window_seconds, proc_info),
                             )
                             .await;
                             state = self.state.lock().await;
@@ -781,12 +834,13 @@ impl Handler for RuleEngine {
                             );
                         }
                         if count >= *threshold {
+                            let proc_name = self.get_process_name(event.ppid);
                             drop(state);
                             self.emit_alert(
                                 &rule.cfg,
                                 format!(
-                                    "ppid {} spawned {} forks in {}s",
-                                    event.ppid, count, window_seconds
+                                    "{} (ppid {}) spawned {} forks in {}s",
+                                    proc_name, event.ppid, count, window_seconds
                                 ),
                             )
                             .await;
