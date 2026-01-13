@@ -1,0 +1,59 @@
+# Sensitive PSI Alert Configuration
+# Triggers early to detect system degradation before complete thrashing
+#
+# Use this config to test PSI-based alerting with lower thresholds
+# that are easier to trigger during testing.
+
+[circuit_breaker]
+enabled = true
+
+# Lower CPU threshold - catch problems earlier
+cpu_usage_threshold = 50.0       # Alert at 50% CPU (vs default 90%)
+                                 # Rationale: Detect issues before system is fully loaded
+
+# Lower PSI threshold - detect early pressure
+cpu_psi_threshold = 20.0         # 20% stall time = 2 out of 10 seconds wasted
+                                 # (vs default 40%)
+                                 # Rationale: Early warning of resource contention
+
+# Memory pressure - detect before complete thrashing
+memory_psi_full_threshold = 15.0 # 15% full stalls (vs default 30%)
+                                 # Rationale: Catch memory pressure early
+
+# I/O pressure - early warning
+io_psi_full_threshold = 25.0     # 25% I/O saturation (vs default 50%)
+                                 # Rationale: Detect I/O bottlenecks sooner
+
+# Faster detection
+grace_period_secs = 10           # Trigger after 10 seconds (vs default 15)
+check_interval_secs = 5          # Check every 5 seconds
+
+# Mode
+mode = "monitor"                 # Log alerts without killing processes
+require_human_approval = true    # Require confirmation before any kills
+
+[recording]
+enabled = true
+file_path = "/tmp/psi_test_recording.jsonl"
+v2_format = true
+snapshots_enabled = true
+snapshot_interval_ms = 5000      # Capture snapshots every 5 seconds
+process_snapshot_limit = 50
+process_cpu_threshold = 1.0
+compress_output = false
+activity_threshold = 0           # Always capture (bypass 20 events/sec limit)
+
+[rules]
+enabled = false
+path = ""
+
+[api]
+enabled = true
+host = "127.0.0.1"
+port = 3000
+
+[llm]
+enabled = false
+
+[notifications]
+enabled = false

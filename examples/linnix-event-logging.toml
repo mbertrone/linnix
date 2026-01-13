@@ -1,0 +1,41 @@
+# Example configuration for cognitod event logging
+#
+# This example shows how to control event log verbosity.
+# Copy this to /etc/linnix/linnix.toml to use it.
+
+[runtime]
+# Normal runtime settings
+offline = true
+cpu_target_pct = 25
+rss_cap_mb = 512
+events_rate_cap = 100000
+
+[logging]
+# Control event logging verbosity
+#
+# When log_events = false (default):
+#   - Event logs (Fork/Exec/Exit) are logged at TRACE level
+#   - These are filtered out by default
+#   - Reduces log volume significantly
+#
+# When log_events = true:
+#   - Event logs are logged at DEBUG level
+#   - Each log includes a timestamp
+#   - Format: [2025-12-23T14:01:46Z DEBUG cognitod::runtime::stream_listener] [event] type="Exit" pid=123...
+#   - Properly parsed by log aggregation systems
+#
+log_events = false  # Recommended for production
+
+# Other logging settings
+alerts_file = "/var/log/linnix/alerts.ndjson"
+insights_file = "/var/log/linnix/insights.ndjson"
+journald = true
+
+[api]
+listen_addr = "127.0.0.1:3000"
+
+# Runtime log level can also be controlled via RUST_LOG environment variable:
+#
+# RUST_LOG=cognitod=info      # No event logs (recommended for production)
+# RUST_LOG=cognitod=debug     # Show event logs if log_events=true
+# RUST_LOG=cognitod=trace     # Show ALL event logs regardless of config

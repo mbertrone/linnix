@@ -12,6 +12,7 @@ pub mod insights;
 pub mod k8s;
 pub mod metrics;
 pub mod notifications;
+pub mod replay;
 pub mod schema;
 pub mod types;
 pub mod ui;

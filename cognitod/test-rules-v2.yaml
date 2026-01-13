@@ -1,0 +1,10 @@
+# Simple test rules for V2 recording validation
+rules:
+  - name: "test_fork_detection"
+    detector:
+      type: "forks_per_sec"
+      threshold: 100.0
+      duration_secs: 2
+    action:
+      notify: true
+      kill: false

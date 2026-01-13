@@ -35,8 +35,9 @@ pub fn start_listener(
     handlers: Arc<HandlerList>,
     _offline: Arc<OfflineGuard>,
     rate_cap: u64,
+    log_events: bool,
 ) {
-    println!("[cognitod] Starting listener for BPF ring buffer...");
+    log::info!("Starting listener for BPF ring buffer");
     tokio::task::spawn_blocking(move || {
         let rt_handle = Handle::current();
         let handlers = handlers.clone();
@@ -56,22 +57,35 @@ pub fn start_listener(
                     let context_clone = context.clone();
                     let event_for_llm = event.clone();
                     let handlers_clone = handlers.clone();
+                    let should_log_events = log_events;
                     rt_handle.spawn(async move {
-                        println!(
-                            "[event] type={:?} pid={} ppid={} uid={} gid={} comm={}",
-                            event_label(event_for_llm.event_type),
-                            event_for_llm.pid,
-                            event_for_llm.ppid,
-                            event_for_llm.uid,
-                            event_for_llm.gid,
-                            comm
-                        );
+                        if should_log_events {
+                            log::debug!(
+                                "[event] type={:?} pid={} ppid={} uid={} gid={} comm={}",
+                                event_label(event_for_llm.event_type),
+                                event_for_llm.pid,
+                                event_for_llm.ppid,
+                                event_for_llm.uid,
+                                event_for_llm.gid,
+                                comm
+                            );
+                        } else {
+                            log::trace!(
+                                "[event] type={:?} pid={} ppid={} uid={} gid={} comm={}",
+                                event_label(event_for_llm.event_type),
+                                event_for_llm.pid,
+                                event_for_llm.ppid,
+                                event_for_llm.uid,
+                                event_for_llm.gid,
+                                comm
+                            );
+                        }
                         handlers_clone.on_event(&event_for_llm).await;
                         context_clone.add(event_for_llm);
                     });
                 } else {
                     metrics.inc_rb_overflow();
-                    println!("[cognitod] Failed to parse event");
+                    log::warn!("Failed to parse event from ring buffer");
                 }
             } else {
                 metrics.inc_rb_overflow();
@@ -88,8 +102,9 @@ pub fn start_perf_listener(
     handlers: Arc<HandlerList>,
     _offline: Arc<OfflineGuard>,
     rate_cap: u64,
+    log_events: bool,
 ) {
-    println!("[cognitod] Starting listener for BPF perf buffers...");
+    log::info!("Starting listener for BPF perf buffers");
 
     let lineage_cache: Arc<LineageCache> = Arc::new(LineageCache::default());
 
@@ -181,6 +196,7 @@ pub fn start_perf_listener(
                     let handlers_clone = Arc::clone(&handlers);
                     let context_clone = Arc::clone(&context);
                     let lineage_clone = Arc::clone(&lineage);
+                    let should_log_events = log_events;
 
                     tokio::spawn(async move {
                         if event_for_llm.event_type == EventType::Fork as u32 {
@@ -199,15 +215,27 @@ pub fn start_perf_listener(
                             }
                         }
 
-                        println!(
-                            "[event] type={:?} pid={} ppid={} uid={} gid={} comm={}",
-                            event_label(event_for_llm.event_type),
-                            event_for_llm.pid,
-                            event_for_llm.ppid,
-                            event_for_llm.uid,
-                            event_for_llm.gid,
-                            comm
-                        );
+                        if should_log_events {
+                            log::debug!(
+                                "[event] type={:?} pid={} ppid={} uid={} gid={} comm={}",
+                                event_label(event_for_llm.event_type),
+                                event_for_llm.pid,
+                                event_for_llm.ppid,
+                                event_for_llm.uid,
+                                event_for_llm.gid,
+                                comm
+                            );
+                        } else {
+                            log::trace!(
+                                "[event] type={:?} pid={} ppid={} uid={} gid={} comm={}",
+                                event_label(event_for_llm.event_type),
+                                event_for_llm.pid,
+                                event_for_llm.ppid,
+                                event_for_llm.uid,
+                                event_for_llm.gid,
+                                comm
+                            );
+                        }
                         handlers_clone.on_event(&event_for_llm).await;
                         context_clone.add(event_for_llm);
                     });

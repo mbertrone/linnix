@@ -54,12 +54,12 @@ impl PsiMetrics {
         // CPU pressure (only has "some", no "full")
         let cpu_path = get_psi_path("cpu");
         if let Ok(content) = fs::read_to_string(&cpu_path) {
-            log::info!("Reading PSI from {}: {}", cpu_path, content.trim());
+            log::debug!("[psi] Reading from {}: {}", cpu_path, content.trim());
             if let Some(value) = parse_avg10(&content, "some") {
                 metrics.cpu_some_avg10 = value;
             }
         } else {
-            log::warn!("Failed to read PSI from {}", cpu_path);
+            log::warn!("[psi] Failed to read from {}", cpu_path);
         }
 
         // Memory pressure (has both "some" and "full")

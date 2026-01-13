@@ -53,6 +53,73 @@ fn default_dashboard_url() -> String {
     "http://localhost:3000".to_string()
 }
 
+/// Recording configuration for process events and system snapshots
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RecordingConfig {
+    /// Enable process event recording (V1 compatibility)
+    #[serde(default = "default_recording_enabled")]
+    pub enabled: bool,
+    
+    /// Output file path for recordings
+    #[serde(default = "default_recording_file_path")]
+    pub file_path: String,
+    
+    /// Enable V2 unified JSON format with system snapshots
+    #[serde(default = "default_v2_format")]  
+    pub v2_format: bool,
+    
+    /// Enable periodic system snapshot recording (V2 only)
+    #[serde(default = "default_snapshots_enabled")]
+    pub snapshots_enabled: bool,
+    
+    /// Interval between system snapshots in milliseconds
+    #[serde(default = "default_snapshot_interval_ms")]
+    pub snapshot_interval_ms: u64,
+    
+    /// Maximum number of processes to include in each snapshot
+    #[serde(default = "default_process_snapshot_limit")]
+    pub process_snapshot_limit: usize,
+    
+    /// Minimum CPU percentage to include process in snapshot
+    #[serde(default = "default_process_cpu_threshold")]
+    pub process_cpu_threshold: f32,
+    
+    /// Enable gzip compression for output file
+    #[serde(default = "default_compress_output")]
+    pub compress_output: bool,
+    
+    /// Activity threshold for RSS updates (events/sec)
+    #[serde(default = "default_activity_threshold")]
+    pub activity_threshold: u64,
+}
+
+impl Default for RecordingConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_recording_enabled(),
+            file_path: default_recording_file_path(),
+            v2_format: default_v2_format(),
+            snapshots_enabled: default_snapshots_enabled(),
+            snapshot_interval_ms: default_snapshot_interval_ms(),
+            process_snapshot_limit: default_process_snapshot_limit(),
+            process_cpu_threshold: default_process_cpu_threshold(),
+            compress_output: default_compress_output(),
+            activity_threshold: default_activity_threshold(),
+        }
+    }
+}
+
+// Recording config defaults
+fn default_recording_enabled() -> bool { false }
+fn default_recording_file_path() -> String { "linnix_recording.jsonl".to_string() }
+fn default_v2_format() -> bool { false } 
+fn default_snapshots_enabled() -> bool { false }
+fn default_snapshot_interval_ms() -> u64 { 5000 }
+fn default_process_snapshot_limit() -> usize { 50 }
+fn default_process_cpu_threshold() -> f32 { 1.0 }
+fn default_compress_output() -> bool { false }
+fn default_activity_threshold() -> u64 { 20 }
+
 #[derive(Debug, Deserialize, Clone, Default)]
 #[allow(dead_code)]
 pub struct Config {
@@ -81,6 +148,8 @@ pub struct Config {
     pub noise_budget: NoiseBudgetConfig,
     #[serde(default)]
     pub privacy: PrivacyConfig,
+    #[serde(default)]
+    pub recording: RecordingConfig,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -137,7 +206,13 @@ impl Config {
         let path =
             std::env::var(ENV_CONFIG_PATH).unwrap_or_else(|_| DEFAULT_CONFIG_PATH.to_string());
         let path = PathBuf::from(path);
-        match fs::read_to_string(&path) {
+        Self::load_from(&path)
+    }
+
+    /// Load configuration from a specific file path. If the file
+    /// is missing or fails to parse, defaults are returned.
+    pub fn load_from(path: &PathBuf) -> Self {
+        match fs::read_to_string(path) {
             Ok(contents) => match toml::from_str(&contents) {
                 Ok(config) => config,
                 Err(e) => {
@@ -149,7 +224,14 @@ impl Config {
                     Config::default()
                 }
             },
-            Err(_) => Config::default(),
+            Err(e) => {
+                log::warn!(
+                    "Failed to read config file at {}: {}. Using defaults.",
+                    path.display(),
+                    e
+                );
+                Config::default()
+            }
         }
     }
 }
@@ -202,6 +284,11 @@ pub struct LoggingConfig {
     pub insights_file: String,
     #[serde(default)]
     pub incident_context_file: Option<String>,
+    /// Enable verbose event logging (Fork/Exec/Exit events)
+    /// When disabled, these events are logged at TRACE level (filtered by default)
+    /// When enabled, these events are logged at DEBUG level
+    #[serde(default = "default_log_events")]
+    pub log_events: bool,
 }
 
 impl Default for LoggingConfig {
@@ -211,6 +298,7 @@ impl Default for LoggingConfig {
             journald: default_journald(),
             insights_file: default_insights_file(),
             incident_context_file: None,
+            log_events: default_log_events(),
         }
     }
 }
@@ -223,6 +311,9 @@ fn default_journald() -> bool {
 }
 fn default_insights_file() -> String {
     "/var/log/linnix/insights.ndjson".to_string()
+}
+fn default_log_events() -> bool {
+    false // Disabled by default to reduce log verbosity
 }
 
 #[derive(Debug, Deserialize, Clone)]

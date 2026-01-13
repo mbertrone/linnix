@@ -1,0 +1,17 @@
+[package]
+name = "record-replay-v2-example"
+version = "0.1.0"
+edition = "2021"
+
+[workspace]
+# Empty workspace to keep this package standalone
+
+[[bin]]
+name = "example_usage"
+path = "example_usage.rs"
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio = { version = "1.0", features = ["full"] }
+anyhow = "1.0"

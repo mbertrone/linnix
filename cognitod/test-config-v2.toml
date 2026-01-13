@@ -1,0 +1,27 @@
+[runtime]
+offline = true
+
+[recording]
+enabled = true
+file_path = "/tmp/linnix_test_recording_v2.jsonl"
+v2_format = true
+snapshots_enabled = true
+snapshot_interval_ms = 5000  # 5 seconds
+process_snapshot_limit = 50
+process_cpu_threshold = 1.0
+compress_output = false
+activity_threshold = 0  # Always update RSS
+
+[logging]
+log_events = false  # Keep event logs quiet
+alerts_file = "/var/log/linnix/alerts.ndjson"
+insights_file = "/var/log/linnix/insights.ndjson"
+
+[rules]
+path = "/etc/linnix/rules.toml"
+
+[api]
+listen_addr = "127.0.0.1:3000"
+
+[circuit_breaker]
+enabled = false
