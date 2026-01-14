@@ -690,6 +690,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 config.logging.alerts_file.clone(),
                 config.logging.journald,
                 Arc::clone(&metrics),
+                Arc::clone(&context),
             ) {
                 Ok(engine) => {
                     let rule_count = engine.rule_count();
@@ -715,6 +716,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             config.logging.alerts_file.clone(),
             config.logging.journald,
             Arc::clone(&metrics),
+            Arc::clone(&context),
         ) {
             Ok(engine) => {
                 let rule_count = engine.rule_count();
