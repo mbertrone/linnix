@@ -54,9 +54,9 @@ data:
     [circuit_breaker]
     enabled = true
     mode = "monitor"
-    cpu_usage_threshold = 90.0
-    cpu_psi_threshold = 40.0
-    grace_period_secs = 15
+    cpu_usage_threshold = 50.0
+    cpu_psi_threshold = 20.0
+    grace_period_secs = 5
     require_human_approval = true
 
     [reasoner]
@@ -64,7 +64,13 @@ data:
 
     [prometheus]
     enabled = true
-    
+
+    # Lock contention monitoring (Linux 5.19+)
+    [lock_contention]
+    enabled = true
+    log_summary = true
+    log_interval_secs = 60
+
     # Staging test configuration
     [logging]
     level = "info"
@@ -103,6 +109,16 @@ data:
       threshold: 100            # 100 processes
       window_seconds: 30        # Within 30 seconds
       max_exec_duration_ms: 500 # Living less than 500ms
+      severity: high
+      cooldown: 120
+
+    # Rule 5: Lock contention (kernel lock wait time)
+    # Alerts when total lock wait time exceeds threshold in a window
+    # Uses eBPF tracepoints (lock:contention_begin/end) - requires Linux 5.19+
+    - name: high_lock_contention
+      detector: lock_contention_wait
+      threshold_us: 500000      # 500ms total wait time in window
+      window_seconds: 10        # Within 10 seconds
       severity: high
       cooldown: 120
 
@@ -176,7 +192,8 @@ spec:
             fieldRef:
               fieldPath: spec.nodeName
         - name: RUST_LOG
-          value: "off,cognitod::alerts=info"
+          value: "info"
+#          value: "off,cognitod::alerts=info"
 #        - name: RUST_LOG_STYLE
 #          value: "never"
 #        - name: RUST_LOG_FORMAT

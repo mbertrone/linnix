@@ -1,30 +1,44 @@
-# Demo rules optimized for scenario detection
-# Using actual supported detectors
+# Demo rules - low thresholds for easy triggering
+# Suitable for lightweight demo environments
 
-- name: fork_storm_demo
+# Rule 1: Sustained high fork rate (fork bomb pattern)
+- name: fork_storm_sustained
   detector: forks_per_sec
-  threshold: 10  # forks per second
-  duration: 2    # seconds
+  threshold: 5              # 5 forks/sec (very low for demo)
+  duration: 3               # 3 seconds
   severity: high
   cooldown: 30
 
-- name: fork_burst_demo
+# Rule 2: Fork burst (emergency detection)
+- name: fork_burst_extreme
   detector: fork_burst
-  threshold: 30  # total forks
+  threshold: 20             # 20 forks in window
   window_seconds: 5
-  severity: medium
+  severity: critical
   cooldown: 30
 
-- name: memory_leak_demo
-  detector: subtree_rss_mb
-  threshold: 50   # MB total RSS (lower to ensure quick detection)
-  duration: 2     # seconds
+# Rule 3: Runaway single process (fork bomb signature)
+- name: runaway_process_tree
+  detector: runaway_tree
+  threshold: 10             # Single parent spawns 10+ children
+  window_seconds: 10
+  severity: critical
+  cooldown: 30
+
+# Rule 4: Short-lived process flood (crash loop detection)
+- name: crash_loop_detection
+  detector: short_job_flood
+  threshold: 10             # 10 short-lived processes
+  window_seconds: 10        # Within 10 seconds
+  max_exec_duration_ms: 500 # Living less than 500ms
   severity: high
   cooldown: 30
 
-- name: cpu_spike_demo
-  detector: subtree_cpu_pct
-  threshold: 50  # percent CPU
-  duration: 5    # seconds
-  severity: medium
-  cooldown: 30
+# Rule 5: Lock contention (kernel lock wait time)
+# Alerts when total lock wait time exceeds threshold in a window
+- name: high_lock_contention
+  detector: lock_contention_wait
+  threshold_us: 100000      # 100ms total wait time
+  window_seconds: 10        # Within 10 seconds
+  severity: high
+  cooldown: 60

@@ -37,6 +37,7 @@ use crate::insights::{InsightRecord, InsightStore as InsightsStore};
 use crate::metrics::Metrics;
 use crate::types::ProcessAlert;
 use crate::types::SystemSnapshot;
+use cognitod::collectors::lock_contention::LockContentionCollector;
 use cognitod::{Incident, IncidentStats, IncidentStore};
 use linnix_ai_ebpf_common::EventType;
 use sysinfo::{Pid, System};
@@ -1199,6 +1200,30 @@ pub async fn healthz() -> axum::Json<serde_json::Value> {
     axum::Json(serde_json::json!({ "status": "ok" }))
 }
 
+/// Response for the lock contention API endpoint
+#[derive(Serialize)]
+pub struct LockContentionResponse {
+    pub enabled: bool,
+    pub stats: Option<cognitod::collectors::lock_contention::LockContentionStats>,
+}
+
+/// GET /lock-contention - Get lock contention statistics
+async fn get_lock_contention(
+    State(state): State<Arc<AppState>>,
+) -> Json<LockContentionResponse> {
+    if let Some(collector) = &state.lock_contention {
+        Json(LockContentionResponse {
+            enabled: true,
+            stats: Some(collector.get_stats()),
+        })
+    } else {
+        Json(LockContentionResponse {
+            enabled: false,
+            stats: None,
+        })
+    }
+}
+
 async fn get_actions(
     State(state): State<Arc<AppState>>,
 ) -> Json<Vec<crate::enforcement::EnforcementAction>> {
@@ -1614,6 +1639,7 @@ pub struct AppState {
     pub enforcement: Option<Arc<crate::enforcement::EnforcementQueue>>,
     pub incident_store: Option<Arc<IncidentStore>>,
     pub k8s: Option<Arc<cognitod::k8s::K8sContext>>,
+    pub lock_contention: Option<Arc<LockContentionCollector>>,
 }
 
 pub fn all_routes(app_state: Arc<AppState>) -> Router {
@@ -1653,7 +1679,8 @@ pub fn all_routes(app_state: Arc<AppState>) -> Router {
         .route("/actions", get(get_actions))
         .route("/actions/{id}", get(get_action_by_id))
         .route("/actions/{id}/approve", axum::routing::post(approve_action))
-        .route("/actions/{id}/reject", axum::routing::post(reject_action));
+        .route("/actions/{id}/reject", axum::routing::post(reject_action))
+        .route("/lock-contention", get(get_lock_contention));
 
     if prometheus_enabled {
         router = router.route("/metrics/prometheus", get(prometheus_metrics));
@@ -2195,6 +2222,7 @@ mod tests {
             auth_token: None,
             incident_store: None,
             k8s: None,
+            lock_contention: None,
         });
         let Json(resp) = super::status_handler(State(app_state)).await;
         let val = serde_json::to_value(resp).unwrap();
@@ -2243,6 +2271,7 @@ mod tests {
             auth_token: None,
             incident_store: None,
             k8s: None,
+            lock_contention: None,
         });
 
         let Json(resp) = super::metrics_handler(State(app_state)).await;
@@ -2274,6 +2303,7 @@ mod tests {
             auth_token: None,
             incident_store: None,
             k8s: None,
+            lock_contention: None,
         });
         let router = super::all_routes(Arc::clone(&app_state));
         let response = router
@@ -2308,6 +2338,7 @@ mod tests {
             auth_token: None,
             incident_store: None,
             k8s: None,
+            lock_contention: None,
         });
         let router = super::all_routes(Arc::clone(&app_state));
         let response = router
@@ -2356,6 +2387,7 @@ mod tests {
             auth_token: None,
             incident_store: None,
             k8s: None,
+            lock_contention: None,
         });
         let router = super::all_routes(app_state);
         let response = router
@@ -2389,6 +2421,7 @@ mod tests {
             incident_store: None,
             auth_token: Some("secret123".to_string()),
             k8s: None,
+            lock_contention: None,
         });
         let router = super::all_routes(app_state);
         let response = router
@@ -2422,6 +2455,7 @@ mod tests {
             incident_store: None,
             auth_token: Some("secret123".to_string()),
             k8s: None,
+            lock_contention: None,
         });
         let router = super::all_routes(app_state);
         let response = router
@@ -2456,6 +2490,7 @@ mod tests {
             incident_store: None,
             auth_token: Some("secret123".to_string()),
             k8s: None,
+            lock_contention: None,
         });
         let router = super::all_routes(app_state);
         let response = router
@@ -2490,6 +2525,7 @@ mod tests {
             incident_store: None,
             auth_token: Some("secret123".to_string()),
             k8s: None,
+            lock_contention: None,
         });
         let router = super::all_routes(app_state);
         let response = router

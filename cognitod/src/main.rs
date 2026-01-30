@@ -96,6 +96,7 @@ use crate::bpf_config::{CoreRssMode, derive_telemetry_config};
 use crate::runtime::probes::{ProbeState, RssProbeMode};
 use clap::Parser;
 use cognitod::alerts::RuleEngine;
+use cognitod::collectors::lock_contention::LockContentionCollector;
 use cognitod::config::{Config, OfflineGuard};
 use cognitod::handler::{HandlerList, JsonlHandler, RecordingHandler};
 use cognitod::metrics::Metrics;
@@ -281,6 +282,20 @@ fn init_ebpf(
         "trace_block_complete",
         "block",
         "block_rq_complete",
+    );
+
+    // Lock contention tracepoints (Linux 5.19+)
+    attach_tracepoint_optional(
+        &mut bpf,
+        "trace_lock_contention_begin",
+        "lock",
+        "contention_begin",
+    );
+    attach_tracepoint_optional(
+        &mut bpf,
+        "trace_lock_contention_end",
+        "lock",
+        "contention_end",
     );
 
     info!("[cognitod] Program attached. Setting up perf buffers...");
@@ -675,6 +690,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 warn!("[cognitod] Failed to initialize recording from config: {}", e);
             }
         }
+    }
+
+    // Initialize lock contention collector
+    let lock_contention_collector = Arc::new(LockContentionCollector::new(&config.lock_contention));
+    if config.lock_contention.enabled {
+        handler_list.register_arc(lock_contention_collector.clone());
+        info!("[cognitod] Lock contention collector enabled");
     }
 
     let enforcement_queue = Some(Arc::new(enforcement::EnforcementQueue::new(300)));
@@ -1242,6 +1264,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
         enforcement: enforcement_queue.clone(),
         incident_store: incident_store.clone(),
         k8s: k8s_context.clone(),
+        lock_contention: if config.lock_contention.enabled {
+            Some(lock_contention_collector)
+        } else {
+            None
+        },
     });
 
     let api = all_routes(app_state.clone());

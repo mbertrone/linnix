@@ -112,13 +112,44 @@ impl Default for RecordingConfig {
 // Recording config defaults
 fn default_recording_enabled() -> bool { false }
 fn default_recording_file_path() -> String { "linnix_recording.jsonl".to_string() }
-fn default_v2_format() -> bool { false } 
+fn default_v2_format() -> bool { false }
 fn default_snapshots_enabled() -> bool { false }
 fn default_snapshot_interval_ms() -> u64 { 5000 }
 fn default_process_snapshot_limit() -> usize { 50 }
 fn default_process_cpu_threshold() -> f32 { 1.0 }
 fn default_compress_output() -> bool { false }
 fn default_activity_threshold() -> u64 { 20 }
+
+/// Lock contention monitoring configuration
+/// Uses eBPF tracepoints (lock:contention_begin/end) to track kernel lock contention
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LockContentionConfig {
+    /// Enable lock contention monitoring (requires Linux 5.19+)
+    #[serde(default = "default_lock_contention_enabled")]
+    pub enabled: bool,
+
+    /// Enable periodic logging of lock contention summaries
+    #[serde(default = "default_lock_log_summary")]
+    pub log_summary: bool,
+
+    /// Interval in seconds between logging lock contention summaries
+    #[serde(default = "default_lock_log_interval_secs")]
+    pub log_interval_secs: u64,
+}
+
+impl Default for LockContentionConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_lock_contention_enabled(),
+            log_summary: default_lock_log_summary(),
+            log_interval_secs: default_lock_log_interval_secs(),
+        }
+    }
+}
+
+fn default_lock_contention_enabled() -> bool { true }
+fn default_lock_log_summary() -> bool { true }
+fn default_lock_log_interval_secs() -> u64 { 60 }
 
 #[derive(Debug, Deserialize, Clone, Default)]
 #[allow(dead_code)]
@@ -150,6 +181,8 @@ pub struct Config {
     pub privacy: PrivacyConfig,
     #[serde(default)]
     pub recording: RecordingConfig,
+    #[serde(default)]
+    pub lock_contention: LockContentionConfig,
 }
 
 #[derive(Debug, Deserialize, Clone)]

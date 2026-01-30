@@ -129,6 +129,13 @@ pub enum Detector {
         #[allow(dead_code)]
         duration: u64,
     },
+    /// Lock contention wait detector - alerts when total lock wait time exceeds threshold
+    LockContentionWait {
+        /// Total wait threshold in microseconds
+        threshold_us: u64,
+        /// Window in seconds to aggregate wait time
+        window_seconds: u64,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -194,6 +201,10 @@ enum RawDetector {
     ZombieCount {
         threshold: u64,
         duration: u64,
+    },
+    LockContentionWait {
+        threshold_us: u64,
+        window_seconds: u64,
     },
 }
 
@@ -273,6 +284,13 @@ impl TryFrom<RawRule> for RuleConfig {
                 threshold,
                 duration,
             },
+            RawDetector::LockContentionWait {
+                threshold_us,
+                window_seconds,
+            } => Detector::LockContentionWait {
+                threshold_us,
+                window_seconds,
+            },
         };
 
         Ok(RuleConfig {
@@ -284,6 +302,19 @@ impl TryFrom<RawRule> for RuleConfig {
     }
 }
 
+/// Maximum lock contention events to track (bounds memory usage)
+const MAX_LOCK_CONTENTION_EVENTS: usize = 10000;
+
+/// Lock contention event with process attribution
+/// Uses fixed-size array for comm to avoid heap allocation
+struct LockContentionEvent {
+    timestamp: Instant,
+    duration_ns: u64,
+    pid: u32,
+    /// Fixed-size comm buffer (same as kernel, avoids String allocation)
+    comm: [u8; 16],
+}
+
 struct RuleState {
     fork_events: VecDeque<Instant>,
     exec_events: VecDeque<Instant>,
@@ -293,6 +324,8 @@ struct RuleState {
     cpu_exceed: HashMap<String, Instant>,
     rss_exceed: HashMap<String, Instant>,
     active: HashMap<String, Instant>,
+    /// Lock contention events with process info
+    lock_contention_events: VecDeque<LockContentionEvent>,
 }
 
 pub struct RuleEngine {
@@ -306,6 +339,7 @@ pub struct RuleEngine {
     exec_window_secs: u64,
     completion_window_secs: u64,
     runaway_window_secs: u64,
+    lock_contention_window_secs: u64,
     metrics: Arc<Metrics>,
     total_memory_bytes: Option<u64>,
     context: Arc<ContextStore>,
@@ -327,6 +361,7 @@ impl RuleEngine {
         let exec_window_secs = 60u64;
         let mut completion_window_secs = 60u64;
         let mut runaway_window_secs = 0u64;
+        let mut lock_contention_window_secs = 0u64;
 
         for cfg in &cfgs {
             match &cfg.detector {
@@ -346,6 +381,9 @@ impl RuleEngine {
                 Detector::ExecRate { .. } => {
                     completion_window_secs = completion_window_secs.max(60);
                 }
+                Detector::LockContentionWait { window_seconds, .. } => {
+                    lock_contention_window_secs = lock_contention_window_secs.max(*window_seconds);
+                }
                 _ => {}
             }
         }
@@ -358,6 +396,9 @@ impl RuleEngine {
         }
         if completion_window_secs == 0 {
             completion_window_secs = 60;
+        }
+        if lock_contention_window_secs == 0 {
+            lock_contention_window_secs = 10; // Default 10 second window for lock contention
         }
 
         let rules = cfgs.into_iter().map(|cfg| Rule { cfg }).collect();
@@ -380,6 +421,7 @@ impl RuleEngine {
                 cpu_exceed: HashMap::new(),
                 rss_exceed: HashMap::new(),
                 active: HashMap::new(),
+                lock_contention_events: VecDeque::new(),
             }),
             tx,
             alerts_file,
@@ -389,6 +431,7 @@ impl RuleEngine {
             exec_window_secs,
             completion_window_secs,
             runaway_window_secs,
+            lock_contention_window_secs,
             metrics,
             total_memory_bytes,
             context,
@@ -637,12 +680,39 @@ impl Handler for RuleEngine {
                     trim_completion_queue(&mut state.exec_completions, completion_keep, now);
                 }
             }
+            x if x == EventType::LockContention as u32 => {
+                // data2 = duration_ns from eBPF
+                let duration_ns = event.data2;
+                if duration_ns > 0 {
+                    let lock_keep = Duration::from_secs(self.lock_contention_window_secs.max(1));
+                    // Copy comm directly - no String allocation
+                    state.lock_contention_events.push_back(LockContentionEvent {
+                        timestamp: now,
+                        duration_ns,
+                        pid: event.pid,
+                        comm: event.comm,
+                    });
+                    // Enforce maximum capacity (evict oldest first)
+                    while state.lock_contention_events.len() > MAX_LOCK_CONTENTION_EVENTS {
+                        state.lock_contention_events.pop_front();
+                    }
+                    // Trim old events by time window
+                    while let Some(evt) = state.lock_contention_events.front() {
+                        if now.duration_since(evt.timestamp) > lock_keep {
+                            state.lock_contention_events.pop_front();
+                        } else {
+                            break;
+                        }
+                    }
+                }
+            }
             _ => {}
         }
 
         let is_fork_event = event.event_type == EventType::Fork as u32;
         let is_exec_event = event.event_type == EventType::Exec as u32;
         let is_exit_event = event.event_type == EventType::Exit as u32;
+        let is_lock_contention_event = event.event_type == EventType::LockContention as u32;
 
         for rule in &self.rules {
             match &rule.cfg.detector {
@@ -923,6 +993,77 @@ impl Handler for RuleEngine {
                     }
                 }
                 Detector::ZombieCount { .. } => {}
+                Detector::LockContentionWait {
+                    threshold_us,
+                    window_seconds,
+                } => {
+                    if is_lock_contention_event {
+                        let window = Duration::from_secs(*window_seconds);
+
+                        // Calculate total wait time in window without intermediate Vec
+                        let total_wait_us: u64 = state
+                            .lock_contention_events
+                            .iter()
+                            .rev()
+                            .take_while(|evt| now.duration_since(evt.timestamp) <= window)
+                            .map(|evt| evt.duration_ns / 1000)
+                            .sum();
+
+                        if log::log_enabled!(log::Level::Debug) && total_wait_us > 0 {
+                            log::debug!(
+                                "[rules] detector=lock_contention_wait rule={} total_wait_us={} threshold_us={} window={}s pid={}",
+                                rule.cfg.name,
+                                total_wait_us,
+                                threshold_us,
+                                window_seconds,
+                                event.pid
+                            );
+                        }
+
+                        if total_wait_us >= *threshold_us {
+                            // Aggregate per-process stats for alert message (keyed by pid only)
+                            let mut by_pid: HashMap<u32, (u64, [u8; 16])> = HashMap::new();
+                            for evt in state.lock_contention_events.iter().rev() {
+                                if now.duration_since(evt.timestamp) > window {
+                                    break;
+                                }
+                                by_pid
+                                    .entry(evt.pid)
+                                    .and_modify(|(total, _)| *total += evt.duration_ns)
+                                    .or_insert((evt.duration_ns, evt.comm));
+                            }
+                            // Sort by total wait descending and take top 3
+                            let mut proc_list: Vec<_> = by_pid.into_iter().collect();
+                            proc_list.sort_by(|a, b| b.1.0.cmp(&a.1.0));
+
+                            // Helper to convert comm bytes to string
+                            fn comm_str(comm: &[u8; 16]) -> &str {
+                                let nul = comm.iter().position(|&b| b == 0).unwrap_or(16);
+                                std::str::from_utf8(&comm[..nul]).unwrap_or("?")
+                            }
+
+                            let top_procs: String = proc_list
+                                .iter()
+                                .take(3)
+                                .map(|(pid, (ns, comm))| {
+                                    format!("{}({}) {}us", comm_str(comm), pid, ns / 1000)
+                                })
+                                .collect::<Vec<_>>()
+                                .join(", ");
+
+                            drop(state);
+                            self.emit_alert(
+                                &rule.cfg,
+                                format!(
+                                    "lock contention: {}us total wait in {}s window (threshold: {}us), top: {}",
+                                    total_wait_us, window_seconds, threshold_us, top_procs
+                                ),
+                            )
+                            .await;
+                            state = self.state.lock().await;
+                        }
+                    }
+                }
             }
         }
     }
@@ -935,6 +1076,7 @@ impl Handler for RuleEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::context::ContextStore;
     use crate::PERCENT_MILLI_UNKNOWN;
     use tokio::time::{self, Duration};
 
@@ -960,6 +1102,7 @@ mod tests {
                 cpu_exceed: HashMap::new(),
                 rss_exceed: HashMap::new(),
                 active: HashMap::new(),
+                lock_contention_events: VecDeque::new(),
             }),
             tx,
             alerts_file: "/dev/null".into(),
@@ -969,8 +1112,10 @@ mod tests {
             exec_window_secs: 60,
             completion_window_secs: 60,
             runaway_window_secs: 1,
+            lock_contention_window_secs: 10,
             metrics: Arc::new(Metrics::new()),
             total_memory_bytes: Some(16 * 1024 * 1024 * 1024),
+            context: Arc::new(ContextStore::new(Duration::from_secs(60), 10000)),
         }
     }
 

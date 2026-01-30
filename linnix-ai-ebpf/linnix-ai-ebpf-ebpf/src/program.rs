@@ -27,6 +27,29 @@ static mut EVENT_BUFFER: PerCpuArray<ProcessEvent> = PerCpuArray::with_max_entri
 #[map(name = "PAGE_FAULT_THROTTLE")]
 static mut PAGE_FAULT_THROTTLE: HashMap<u32, u64> = HashMap::with_max_entries(65_536, 0);
 
+/// Key: (lock_addr_low32, tid) -> (start timestamp, flags) for correlating contention_begin/end
+/// We use lower 32 bits of lock_addr to save space, combined with tid for uniqueness
+/// Sized for high-contention scenarios (16K concurrent lock waits)
+#[map(name = "LOCK_CONTENTION_START")]
+static mut LOCK_CONTENTION_START: HashMap<LockContentionKey, LockContentionValue> = HashMap::with_max_entries(16384, 0);
+
+/// Key for lock contention tracking: combines lock address (lower 32 bits) and thread ID
+#[repr(C)]
+#[derive(Copy, Clone)]
+struct LockContentionKey {
+    lock_addr_low: u32,
+    tid: u32,
+}
+
+/// Value stored for lock contention begin: timestamp and lock flags
+#[repr(C)]
+#[derive(Copy, Clone)]
+struct LockContentionValue {
+    start_ns: u64,
+    flags: u32,
+    _pad: u32,
+}
+
 #[no_mangle]
 static mut TELEMETRY_CONFIG: TelemetryConfig = TelemetryConfig::zeroed();
 
@@ -45,6 +68,13 @@ const DEVICE_MAJOR_BITS: u32 = 12;
 const DEVICE_MINOR_BITS: u32 = 20;
 const DEVICE_MAJOR_MASK: u64 = (1u64 << DEVICE_MAJOR_BITS) - 1;
 const DEVICE_MINOR_MASK: u64 = (1u64 << DEVICE_MINOR_BITS) - 1;
+
+// Lock contention tracepoint offsets (from kernel include/trace/events/lock.h)
+// lock:contention_begin format: lock_addr (void*), flags (unsigned int)
+// lock:contention_end format: lock_addr (void*), ret (int)
+const LOCK_CONTENTION_ADDR_OFFSET: usize = 0;
+const LOCK_CONTENTION_FLAGS_OFFSET: usize = 8;
+const LOCK_CONTENTION_RET_OFFSET: usize = 8;
 
 #[repr(C)]
 #[derive(Copy, Clone)]
@@ -691,6 +721,119 @@ pub fn trace_sys_enter(ctx: TracePointContext) -> u32 {
 
 fn try_trace_sys_enter(ctx: TracePointContext) -> u32 {
     let _ = ctx;
+    0
+}
+
+// Lock contention tracepoints (Linux 5.19+)
+// These tracepoints fire when a thread blocks waiting for a lock
+
+#[cfg(target_arch = "bpf")]
+#[tracepoint(category = "lock", name = "contention_begin")]
+pub fn trace_lock_contention_begin(ctx: TracePointContext) -> u32 {
+    try_trace_lock_contention_begin(ctx)
+}
+
+#[cfg(target_arch = "bpf")]
+fn try_trace_lock_contention_begin(ctx: TracePointContext) -> u32 {
+    let lock_addr = match tp_read_u64(&ctx, LOCK_CONTENTION_ADDR_OFFSET) {
+        Some(addr) => addr,
+        None => return 0,
+    };
+    let flags = match tp_read_u32(&ctx, LOCK_CONTENTION_FLAGS_OFFSET) {
+        Some(f) => f,
+        None => return 0,
+    };
+
+    let tid = ctx.pid();
+    if tid == 0 {
+        return 0;
+    }
+
+    let now = unsafe { bpf_ktime_get_ns() };
+    let key = LockContentionKey {
+        lock_addr_low: lock_addr as u32,
+        tid,
+    };
+    let value = LockContentionValue {
+        start_ns: now,
+        flags,
+        _pad: 0,
+    };
+
+    let map = unsafe { &LOCK_CONTENTION_START };
+    let _ = map.insert(&key, &value, 0);
+    0
+}
+
+#[cfg(target_arch = "bpf")]
+#[tracepoint(category = "lock", name = "contention_end")]
+pub fn trace_lock_contention_end(ctx: TracePointContext) -> u32 {
+    try_trace_lock_contention_end(ctx)
+}
+
+#[cfg(target_arch = "bpf")]
+fn try_trace_lock_contention_end(ctx: TracePointContext) -> u32 {
+    let lock_addr = match tp_read_u64(&ctx, LOCK_CONTENTION_ADDR_OFFSET) {
+        Some(addr) => addr,
+        None => return 0,
+    };
+    // contention_end has 'ret' at same offset as 'flags' in contention_begin
+    let ret = tp_read_u32(&ctx, LOCK_CONTENTION_RET_OFFSET).unwrap_or(0);
+
+    let tid = ctx.pid();
+    if tid == 0 {
+        return 0;
+    }
+
+    let now = unsafe { bpf_ktime_get_ns() };
+    let key = LockContentionKey {
+        lock_addr_low: lock_addr as u32,
+        tid,
+    };
+
+    // Look up start time and flags, then calculate duration
+    let map = unsafe { &LOCK_CONTENTION_START };
+    let value = match unsafe { map.get(&key) } {
+        Some(v) => *v,
+        None => return 0, // No matching begin event
+    };
+
+    // Remove the entry
+    let _ = map.remove(&key);
+
+    // Calculate contention duration
+    let duration_ns = now.saturating_sub(value.start_ns);
+    if duration_ns == 0 {
+        return 0;
+    }
+
+    emit_lock_contention_event(&ctx, now, lock_addr, duration_ns, value.flags, ret)
+}
+
+fn emit_lock_contention_event<C: EbpfContext>(
+    ctx: &C,
+    now: u64,
+    lock_addr: u64,
+    duration_ns: u64,
+    flags: u32,
+    ret: u32,
+) -> u32 {
+    let pid = ctx.pid();
+    if pid == 0 {
+        return 0;
+    }
+
+    let event = match event_buffer_mut() {
+        Some(event) => event,
+        None => return 1,
+    };
+
+    init_event(ctx, EventType::LockContention, now, pid, event);
+    event.data = lock_addr;      // Lock address
+    event.data2 = duration_ns;   // Wait duration in nanoseconds
+    event.aux = flags;           // Lock type flags (LCB_F_*)
+    event.aux2 = ret;            // Return value (0 = acquired)
+    submit_event(ctx, event);
     0
 }
 
