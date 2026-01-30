@@ -185,6 +185,24 @@ pub enum EventType {
     Syscall = 5,
     BlockIo = 6,
     PageFault = 7,
+    LockContention = 8,
+}
+
+/// Lock contention flags (from kernel LCB_F_* definitions in include/trace/events/lock.h)
+/// These flags classify the type of lock that experienced contention.
+pub mod lock_flags {
+    /// Spinlock contention
+    pub const LCB_F_SPIN: u32 = 1 << 0;
+    /// Read lock contention (shared access)
+    pub const LCB_F_READ: u32 = 1 << 1;
+    /// Write lock contention (exclusive access)
+    pub const LCB_F_WRITE: u32 = 1 << 2;
+    /// Real-time mutex contention
+    pub const LCB_F_RT: u32 = 1 << 3;
+    /// Per-CPU lock contention
+    pub const LCB_F_PERCPU: u32 = 1 << 4;
+    /// Mutex contention (no flags set typically indicates mutex)
+    pub const LCB_F_MUTEX: u32 = 0;
 }
 
 #[cfg(all(feature = "user", not(target_os = "none")))]

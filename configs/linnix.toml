@@ -41,3 +41,13 @@ enabled = true
 #     "mailto://user:pass@smtp.gmail.com"
 # ]
 # min_severity = "medium"  # Options: info, low, medium, high (default: info)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Lock Contention Monitoring (Linux 5.19+)
+# ─────────────────────────────────────────────────────────────────────────────
+# Uses eBPF tracepoints (lock:contention_begin/end) to track kernel lock contention
+#
+[lock_contention]
+enabled = true
+log_summary = true       # Log periodic summaries (set to false to disable)
+log_interval_secs = 60   # Log summary every 60 seconds
